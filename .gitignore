@@ -7,8 +7,7 @@ intermediates/
 docs/build
 build/
 dist/
-radon.egg-info/
-torch_radon.egg-info/
+*.egg-info/
 objs/
 examples/*.ipynb
 
@@ -17,5 +16,4 @@ benchmarks/**/*.ipynb
 
 *.pyc
 *.ncu-rep
-test
 venv/
