@@ -1,0 +1,6 @@
+IndentWidth: 4
+ColumnLimit: 100
+BreakAfterAttributes: Always
+IndentAccessModifiers: false
+AlwaysBreakTemplateDeclarations: true
+BreakConstructorInitializers: BeforeComma
