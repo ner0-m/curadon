@@ -5,6 +5,19 @@
 #include <cstdint>
 #include <cuda_runtime_api.h>
 
+#define gpuErrchk(answer)                                                                          \
+    { gpuAssert((answer), __FILE__, __LINE__); }
+
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true) {
+    if (code != cudaSuccess) {
+        fprintf(stderr, "GPUassert: '%s: %s' (%d) in %s:%d\n", cudaGetErrorName(code),
+                cudaGetErrorString(code), code, file, line);
+        if (abort) {
+            exit(code);
+        }
+    }
+}
+
 namespace curad {
 namespace detail {
 /// Basically computes the multiplication of R_y(psi) * R_z(theta) * R_x(phi) * v
@@ -162,12 +175,11 @@ __constant__ Vec<float, 3> dev_delta_y[num_projects_per_kernel];
 __constant__ Vec<float, 3> dev_delta_z[num_projects_per_kernel];
 
 template <class T>
-__global__ void
-kernel_backprojection_single(T *volume, std::int64_t stride_x, std::int64_t stride_y,
-                             std::int64_t stride_z, Vec<float, 3> source,
-                             Vec<std::uint64_t, 3> vol_shape, float DSD, float DSO,
-                             Vec<std::uint64_t, 2> det_shape, std::int64_t cur_projection,
-                             std::int64_t total_projections, cudaTextureObject_t tex) {
+__global__ void kernel_backprojection(T *volume, std::int64_t stride_x, std::int64_t stride_y,
+                                      std::int64_t stride_z, Vec<float, 3> source,
+                                      Vec<std::uint64_t, 3> vol_shape, float DSD, float DSO,
+                                      Vec<std::uint64_t, 2> det_shape, std::int64_t cur_projection,
+                                      std::int64_t total_projections, cudaTextureObject_t tex) {
     auto idx_x = blockIdx.x * blockDim.x + threadIdx.x;
     auto idx_y = blockIdx.y * blockDim.y + threadIdx.y;
     auto start_idx_z = blockIdx.z * num_voxels_per_thread + threadIdx.z;
@@ -218,4 +230,133 @@ kernel_backprojection_single(T *volume, std::int64_t stride_x, std::int64_t stri
         }
     }
 }
+
+template <class T, class U>
+void backproject_3d(T *volume, std::int64_t stride_x, std::int64_t stride_y, std::int64_t stride_z,
+                    Vec<std::uint64_t, 3> vol_shape, Vec<float, 3> vol_size,
+                    Vec<float, 3> vol_spacing, Vec<float, 3> vol_offset, U *sinogram,
+                    std::int64_t sino_width, std::int64_t sino_height,
+                    Vec<std::uint64_t, 2> det_shape, std::vector<float> angles,
+                    Vec<float, 3> source, float DSD, float DSO) {
+    const auto nangles = angles.size();
+
+    // allocate cuda array for sinogram
+    const cudaExtent extent_alloc =
+        make_cudaExtent(sino_width, sino_height, curad::num_projects_per_kernel);
+    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
+    cudaArray_t array_cu;
+    cudaMalloc3DArray(&array_cu, &channelDesc, extent_alloc);
+    gpuErrchk(cudaPeekAtLastError());
+
+    cudaTextureObject_t tex;
+
+    auto num_kernel_calls =
+        (nangles + curad::num_projects_per_kernel - 1) / curad::num_projects_per_kernel;
+    for (int i = 0; i < num_kernel_calls; ++i) {
+        auto proj_idx = i * curad::num_projects_per_kernel;
+
+        // Copy to cuda array
+        cudaMemcpy3DParms copyParams = {0};
+        gpuErrchk(cudaPeekAtLastError());
+
+        auto ptr = sinogram + proj_idx * sino_width * sino_height;
+        copyParams.srcPtr =
+            make_cudaPitchedPtr((void *)ptr, sino_width * sizeof(float), sino_width, sino_height);
+
+        auto projections_left = nangles - (i * curad::num_projects_per_kernel);
+        const cudaExtent extent =
+            make_cudaExtent(sino_width, sino_height,
+                            std::min<int>(curad::num_projects_per_kernel, projections_left));
+        // std::cout << "sino size: " << sino.size() << "\n";
+        // std::cout << "offset: " << proj_idx * width * height << "\n";
+        // std::cout << "extent: " << extent.width << " " << extent.height << " " << extent.depth
+        //           << "\n";
+        gpuErrchk(cudaPeekAtLastError());
+        copyParams.dstArray = array_cu;
+        copyParams.extent = extent;
+        copyParams.kind = cudaMemcpyDefault;
+        cudaMemcpy3DAsync(&copyParams, 0); // TODO: use stream pool
+        cudaStreamSynchronize(0);
+        gpuErrchk(cudaPeekAtLastError());
+
+        cudaResourceDesc texRes;
+        memset(&texRes, 0, sizeof(cudaResourceDesc));
+        texRes.resType = cudaResourceTypeArray;
+        texRes.res.array.array = array_cu;
+        cudaTextureDesc texDescr;
+        memset(&texDescr, 0, sizeof(cudaTextureDesc));
+        texDescr.normalizedCoords = false;
+        texDescr.filterMode = cudaFilterModeLinear;
+        texDescr.addressMode[0] = cudaAddressModeBorder;
+        texDescr.addressMode[1] = cudaAddressModeBorder;
+        texDescr.addressMode[2] = cudaAddressModeBorder;
+        texDescr.readMode = cudaReadModeElementType;
+
+        cudaCreateTextureObject(&tex, &texRes, &texDescr, NULL);
+        gpuErrchk(cudaPeekAtLastError());
+
+        std::vector<curad::Vec<float, 3>> vol_origins;
+        std::vector<curad::Vec<float, 3>> delta_xs;
+        std::vector<curad::Vec<float, 3>> delta_ys;
+        std::vector<curad::Vec<float, 3>> delta_zs;
+        for (int j = 0; j < curad::num_projects_per_kernel; ++j) {
+            float angle = angles[proj_idx + j] * M_PI / 180.f;
+
+            curad::Vec<float, 3> init_vol_origin = -vol_size / 2.f + vol_spacing / 2.f + vol_offset;
+            auto vol_origin = curad::detail::rotate_yzy(init_vol_origin, angle, 0.f, 0.f);
+            vol_origins.push_back(vol_origin);
+
+            curad::Vec<float, 3> init_delta;
+            init_delta = init_vol_origin;
+            init_delta[0] += vol_spacing[0];
+            init_delta = curad::detail::rotate_yzy(init_delta, angle, 0.f, 0.f);
+            delta_xs.push_back(init_delta - vol_origin);
+
+            init_delta = init_vol_origin;
+            init_delta[1] += vol_spacing[1];
+            init_delta = curad::detail::rotate_yzy(init_delta, angle, 0.f, 0.f);
+            delta_ys.push_back(init_delta - vol_origin);
+
+            init_delta = init_vol_origin;
+            init_delta[2] += vol_spacing[2];
+            init_delta = curad::detail::rotate_yzy(init_delta, angle, 0.f, 0.f);
+            delta_zs.push_back(init_delta - vol_origin);
+        }
+
+        cudaMemcpyToSymbol(curad::dev_vol_origin, vol_origins.data(),
+                           sizeof(curad::Vec<float, 3>) * curad::num_projects_per_kernel, 0,
+                           cudaMemcpyDefault);
+        cudaMemcpyToSymbol(curad::dev_delta_x, delta_xs.data(),
+                           sizeof(curad::Vec<float, 3>) * curad::num_projects_per_kernel, 0,
+                           cudaMemcpyDefault);
+        cudaMemcpyToSymbol(curad::dev_delta_y, delta_ys.data(),
+                           sizeof(curad::Vec<float, 3>) * curad::num_projects_per_kernel, 0,
+                           cudaMemcpyDefault);
+        cudaMemcpyToSymbol(curad::dev_delta_z, delta_zs.data(),
+                           sizeof(curad::Vec<float, 3>) * curad::num_projects_per_kernel, 0,
+                           cudaMemcpyDefault);
+        gpuErrchk(cudaPeekAtLastError());
+        gpuErrchk(cudaDeviceSynchronize());
+
+        int divx = 16;
+        int divy = 32;
+        int divz = curad::num_voxels_per_thread;
+
+        dim3 threads_per_block(divx, divy, 1);
+
+        int block_x = (vol_shape[0] + divx - 1) / divx;
+        int block_y = (vol_shape[1] + divy - 1) / divy;
+        int block_z = (vol_shape[2] + divz - 1) / divz;
+        dim3 num_blocks(block_x, block_y, block_z);
+        kernel_backprojection<<<num_blocks, threads_per_block>>>(volume, stride_x, stride_y,
+                                                                 stride_z, source, vol_shape, DSD,
+                                                                 DSO, det_shape, i, nangles, tex);
+
+        gpuErrchk(cudaPeekAtLastError());
+        gpuErrchk(cudaDeviceSynchronize());
+    }
+
+    cudaDestroyTextureObject(tex);
+}
+
 } // namespace curad
