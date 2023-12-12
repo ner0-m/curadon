@@ -20,6 +20,8 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
   set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -G")
 endif()
 
+set(CMAKE_CUDA_ARCHITECTURES "native")
+
 find_package(CUDAToolkit REQUIRED)
 
 add_library(curadon src/curadon.cu)
@@ -32,6 +34,11 @@ target_compile_options(
 
 cpmaddpackage("gh:onqtam/doctest@2.4.11")
 
+find_package(OpenGL REQUIRED)
+find_package(glfw3 REQUIRED)
+find_package(GLUT REQUIRED)
+find_package(GLEW REQUIRED)
+
 add_executable(
   tests
   test/test_main.cpp
@@ -42,7 +49,8 @@ add_executable(
   test/test_traversal.cu
   test/test_parallel.cu
   test/test_fanbeam.cu
+  test/test_backprojection.cu
   test/test_forward_projection.cu)
-target_link_libraries(tests curadon doctest)
+target_link_libraries(tests curadon doctest OpenGL::GL GLEW::glew glfw)
 
 add_subdirectory(benchmark)

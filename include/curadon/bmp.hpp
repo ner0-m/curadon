@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -11,8 +12,8 @@
 
 namespace curad {
 template <typename T>
-void write(std::ostream &stream, T const *data, std::size_t size, std::size_t width,
-           std::size_t height, T scale = T{1}) {
+inline void write(std::ostream &stream, T const *data, std::size_t size, std::size_t width,
+                  std::size_t height) {
     // P2: Magic number specifying grey scale, then the two dimensions in the next line
     // Then the maximum value of the image in our case always 255
     stream << "P2\n" << width << " " << height << "\n" << 255 << "\n";
@@ -33,14 +34,14 @@ void write(std::ostream &stream, T const *data, std::size_t size, std::size_t wi
 }
 
 template <typename T>
-void write(std::string filename, T const *data, std::size_t size, std::size_t width,
-           std::size_t height, T scale = T{1}) {
+inline void write(std::string filename, T const *data, std::size_t size, std::size_t width,
+                  std::size_t height) {
     std::ofstream ofs(filename, std::ios_base::out);
 
-    write(ofs, data, size, width, height, scale);
+    write(ofs, data, size, width, height);
 }
 
-std::tuple<std::vector<int>, std::size_t, std::size_t> read(std::istream &stream) {
+inline std::tuple<std::vector<int>, std::size_t, std::size_t> read(std::istream &stream) {
     std::string magic_number;
     std::size_t width;
     std::size_t height;
@@ -62,10 +63,69 @@ std::tuple<std::vector<int>, std::size_t, std::size_t> read(std::istream &stream
     return {data, width, height};
 }
 
-std::tuple<std::vector<int>, std::size_t, std::size_t> read(std::string filename) {
+inline std::tuple<std::vector<int>, std::size_t, std::size_t> read(std::string filename) {
     std::ifstream ofs(filename, std::ios_base::out);
 
     return read(ofs);
 }
+
+namespace easy {
+inline std::tuple<std::vector<float>, std::size_t, std::size_t, std::size_t, std::vector<float>,
+                  float, float>
+read(std::istream &stream) {
+    // parse type
+    std::string aux;
+    std::string type;
+    stream >> aux >> type;
+
+    if (type != "sino") {
+        throw std::runtime_error("can only read type 'sino'");
+    }
+
+    std::size_t width;
+    std::size_t height;
+    stream >> aux >> width >> height;
+
+    std::size_t nangles;
+    stream >> aux >> nangles;
+
+    std::vector<float> angles;
+    angles.reserve(nangles);
+    stream >> aux;
+    for (int i = 0; i < nangles; ++i) {
+        float angle;
+        stream >> angle;
+        angles.push_back(angle);
+    }
+
+    float DSO;
+    stream >> aux >> DSO;
+    float DSD;
+    stream >> aux >> DSD;
+
+    std::cout << "DSO: " << DSO << "\n";
+    // std::cout << "aux: " << aux << "\n";
+    std::cout << "DSD: " << DSD << "\n";
+
+    auto size = width * height * nangles;
+    std::vector<float> data;
+    data.reserve(size);
+
+    float val;
+    while (stream >> val) {
+        data.push_back(val);
+    }
+
+    return {data, width, height, nangles, angles, DSO, DSD};
+}
+
+inline std::tuple<std::vector<float>, std::size_t, std::size_t, std::size_t, std::vector<float>,
+                  float, float>
+read(std::string filename) {
+    std::ifstream ofs(filename, std::ios_base::out);
+
+    return read(ofs);
+}
+} // namespace easy
 
 } // namespace curad

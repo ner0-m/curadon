@@ -4,6 +4,38 @@
 #include "curadon/utils.hpp"
 
 namespace curad {
+template <class T, std::int64_t Dim>
+class geometry {
+  public:
+  private:
+    /// Distance source to detector
+    T DSD;
+
+    /// Distance source to origin
+    T DSO;
+
+    /// Shape of detector
+    Vec<std::uint64_t, Dim> det_shape_;
+
+    /// Spacing of detector
+
+    /// Size in world of detector (shape * spacing)
+
+    /// Offset of detector origin / offset correction
+
+    /// Rotation of detector (roll, pitch, yaw)
+
+    /// Center of rotation correction
+
+    /// Shape of volume
+
+    /// Spacing of volume
+
+    /// Size in world of volume (shape * spacing)
+
+    /// Offset of volume origin
+};
+
 template <class T, class Fn>
 class fan_beam_geometry {
     static constexpr std::int64_t Dim = 2;
@@ -22,7 +54,6 @@ class fan_beam_geometry {
         auto ref = det_point(idx, u);
         auto rd = ref - ro;
         rd = normalized(rd);
-        // printf("ro: (%f %f), rd: (%f %f), ref: (%f %f)\n", ro[0], ro[1], rd[0], rd[1], ref[0], ref[1]);
         return {ro, rd};
     }
 
