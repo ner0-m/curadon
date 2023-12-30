@@ -70,17 +70,11 @@ inline std::tuple<std::vector<int>, std::size_t, std::size_t> read(std::string f
 }
 
 namespace easy {
+namespace detail {
 inline std::tuple<std::vector<float>, std::size_t, std::size_t, std::size_t, std::vector<float>,
                   float, float>
-read(std::istream &stream) {
-    // parse type
+read_sino(std::istream &stream) {
     std::string aux;
-    std::string type;
-    stream >> aux >> type;
-
-    if (type != "sino") {
-        throw std::runtime_error("can only read type 'sino'");
-    }
 
     std::size_t width;
     std::size_t height;
@@ -117,6 +111,45 @@ read(std::istream &stream) {
     }
 
     return {data, width, height, nangles, angles, DSO, DSD};
+}
+
+inline std::tuple<std::vector<float>, std::size_t, std::size_t, std::size_t, std::vector<float>,
+                  float, float>
+read_vol(std::istream &stream) {
+    std::string aux;
+
+    std::size_t width;
+    std::size_t height;
+    std::size_t depth;
+    stream >> aux >> width >> height >> depth;
+
+    auto size = width * height * depth;
+    std::vector<float> data;
+    data.reserve(size);
+
+    float val;
+    while (stream >> val) {
+        data.push_back(val);
+    }
+
+    return {data, width, height, depth, std::vector<float>{}, 0, 0};
+}
+} // namespace detail
+inline std::tuple<std::vector<float>, std::size_t, std::size_t, std::size_t, std::vector<float>,
+                  float, float>
+read(std::istream &stream) {
+    // parse type
+    std::string aux;
+    std::string type;
+    stream >> aux >> type;
+
+    if (type == "sino") {
+        return detail::read_sino(stream);
+    } else if (type == "vol") {
+        return detail::read_vol(stream);
+    } else {
+        throw std::runtime_error("Unknown type to read from");
+    }
 }
 
 inline std::tuple<std::vector<float>, std::size_t, std::size_t, std::size_t, std::vector<float>,

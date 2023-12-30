@@ -1,150 +1,121 @@
 #include "curadon/bmp.hpp"
-#include "curadon/fan.hpp"
 #include "curadon/forward.hpp"
-#include "curadon/geometry/ray.hpp"
-#include "curadon/parallel.hpp"
 
 #include "doctest/doctest.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <iomanip>
 #include <type_traits>
 
-namespace doctest {
-template <typename T>
-struct StringMaker<::curad::projection_view<T, 1>> {
-    static String convert(const ::curad::projection_view<T, 1> &in) {
-        std::ostringstream oss;
-        oss.precision(3);
+#include <thrust/device_vector.h>
+#include <thrust/host_vector.h>
+#include <thrust/sequence.h>
 
-        oss << "proj [angles <" << in.nangles() << ">, det size <" << in.shape()[0] << ">]\n";
-        for (int i = 0; i < in.nangles(); ++i) {
-            oss << "[";
-            for (int j = 0; j < in.shape()[0] - 1; ++j) {
-                oss << std::setw(5) << in(i, j) << " ";
-            }
-            oss << std::setw(5) << in(i, in.shape()[0] - 1) << "]\n";
-        }
+#include "show.hpp"
 
-        return oss.str().c_str();
-    }
-};
-} // namespace doctest
+TEST_CASE("forward_projection_3d") {
+    auto [data, width, height, depth, ignore1, ignore2, ignore3] = curad::easy::read("phantom.txt");
 
-TEST_CASE("Forward: single projection") {
-    // curad::box<float, 2> aabb = {{-6, -6}, {6, 6}};
-    curad::box<float, 2> aabb = {{-8, -8}, {8, 8}};
+    thrust::host_vector<float> host_volume(width * height * depth, 0);
+    std::copy(data.begin(), data.end(), host_volume.begin());
 
-    std::vector<float> voldata(
-        {{0.0, 0.0,       0.0,       0.0,       0.0, 0.0,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.0,       0.0, 0.0,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.0,       0.0, 0.0,       0.0,       0.2,
-          0.2, 0.2,       0.0,       0.0,       0.0, 0.0,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.0,       0.0, 0.2,       0.2,       0.2,
-          0.2, 0.2,       0.2,       0.2,       0.0, 0.0,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.0,       0.0, 0.2,       0.2,       0.3,
-          0.3, 0.3,       0.2,       0.2,       0.0, 0.0,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.0,       0.2, -1.49e-08, 0.3,       0.3,
-          0.3, 0.3,       0.3,       0.2,       0.2, 0.0,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.0,       0.2, -1.49e-08, 0.1,       0.3,
-          0.3, 0.3,       0.3,       0.2,       0.2, 0.0,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.2,       0.2, -1.49e-08, 0.1,       0.3,
-          0.3, 0.3,       0.1,       0.2,       0.2, 0.2,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.2,       0.2, -1.49e-08, -1.49e-08, 0.3,
-          0.3, 0.1,       -1.49e-08, -1.49e-08, 0.2, 0.2,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.2,       0.2, -1.49e-08, -1.49e-08, -1.49e-08,
-          0.2, -1.49e-08, -1.49e-08, -1.49e-08, 0.2, 0.2,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.2,       0.2, 0.2,       -1.49e-08, -1.49e-08,
-          0.2, -1.49e-08, -1.49e-08, -1.49e-08, 0.2, 0.2,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.2,       0.2, 0.2,       -1.49e-08, -1.49e-08,
-          0.2, 0.2,       -1.49e-08, 0.2,       0.2, 0.2,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.0,       0.2, 0.2,       -1.49e-08, -1.49e-08,
-          0.2, 0.2,       0.2,       0.2,       0.2, 0.0,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.0,       0.2, 0.2,       0.2,       -1.49e-08,
-          0.2, 0.2,       0.2,       0.2,       0.2, 0.0,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.0,       0.0, 0.2,       0.2,       0.2,
-          0.2, 0.2,       0.2,       0.2,       0.0, 0.0,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.0,       0.0, 0.2,       0.2,       0.2,
-          0.2, 0.2,       0.2,       0.2,       0.0, 0.0,       0.0,       0.0,
-          0.0, 0.0,       0.0,       0.0,       0.0, 0.0,       0.0,       0.2,
-          0.2, 0.2,       0.0,       0.0,       0.0, 0.0,       0.0,       0.0}});
+    thrust::device_vector<float> volume = host_volume;
+    auto volume_ptr = thrust::raw_pointer_cast(volume.data());
 
-    // std::vector<float> voldata({{
-    //     0.000, 0.000, 0.000, 0.000, 0.000,  0.000,  0.000,  0.000,  0.000,  0.000, 0.000, 0.000,
-    //     0.000, 0.000, 0.000, 0.000, 0.000,  0.200,  0.200,  0.200,  0.000,  0.000, 0.000, 0.000,
-    //     0.000, 0.000, 0.000, 0.000, 0.200,  0.200,  0.200,  0.200,  0.200,  0.000, 0.000, 0.000,
-    //     0.000, 0.000, 0.000, 0.200, 0.200,  0.200,  0.300,  0.200,  0.200,  0.200, 0.000, 0.000,
-    //     0.000, 0.000, 0.200, 0.200, -0.000, 0.100,  0.300,  0.100,  0.200,  0.200, 0.200, 0.000,
-    //     0.000, 0.000, 0.200, 0.200, -0.000, -0.000, 0.100,  -0.000, -0.000, 0.200, 0.200, 0.000,
-    //     0.000, 0.000, 0.200, 0.200, -0.000, -0.000, -0.200, -0.000, -0.000, 0.200, 0.200, 0.000,
-    //     0.000, 0.000, 0.200, 0.200, 0.200,  -0.000, -0.200, -0.000, -0.000, 0.200, 0.200, 0.000,
-    //     0.000, 0.000, 0.200, 0.200, 0.200,  -0.000, -0.000, -0.000, 0.200,  0.200, 0.200, 0.000,
-    //     0.000, 0.000, 0.000, 0.200, 0.200,  0.200,  0.200,  0.200,  0.200,  0.200, 0.000, 0.000,
-    //     0.000, 0.000, 0.000, 0.000, 0.200,  0.200,  0.200,  0.200,  0.200,  0.000, 0.000, 0.000,
-    //     0.000, 0.000, 0.000, 0.000, 0.000,  0.200,  0.200,  0.200,  0.000,  0.000, 0.000, 0.000,
-    // }});
+    // compute angles
+    const std::size_t nangles = 300;
+    std::vector<float> angles(nangles);
+    const float step = 2.f * M_PI / nangles;
+    thrust::sequence(angles.begin(), angles.end(), 0.f, step);
 
-    curad::device_span<float> vol_span(voldata.data(), voldata.size());
-    // curad::volume<float, 2> vol{vol_span, {12, 12}};
-    curad::volume<float, 2> vol{vol_span, {16, 16}};
+    const std::size_t det_width = static_cast<std::size_t>(std::ceil(width * std::sqrt(2)));
+    const std::size_t det_height = static_cast<std::size_t>(std::ceil(height * std::sqrt(2)));
+    thrust::device_vector<float> sinogram(det_width * det_height * nangles, 0);
+    auto sinogram_ptr = thrust::raw_pointer_cast(sinogram.data());
 
-    const auto num_angles = 100;
-    const auto det_size = 20;
-    std::vector<float> projdata(num_angles * det_size, 0);
+    const auto det_shape = curad::Vec<std::uint64_t, 2>{det_width, det_height};
+    const auto det_spacing = curad::Vec<float, 2>{1, 1};
 
-    curad::device_span<float> proj_span(projdata.data(), projdata.size());
-    curad::projection_view<float, 1> proj(proj_span, {det_size, num_angles});
+    const auto vol_shape = curad::Vec<std::uint64_t, 3>{width, height, depth};
 
-    curad::equally_spaced_angles<float> space(0, M_PI, num_angles);
-    // auto geometry =
-    //     curad::parallel_2d_geometry<float, curad::equally_spaced_angles<float>>(space, det_size);
-    auto geometry = curad::fan_beam_geometry<float, curad::equally_spaced_angles<float>>(
-        space, 1000,50, det_size);
+    const auto vol_spacing = curad::Vec<float, 3>{1, 1, 1};
+    const auto vol_size = vol_shape * vol_spacing;
 
-    curad::forward(aabb, vol, proj, geometry,
-                   [&] __host__(auto angle_idx, auto range_idx, bool in_aabb,
-                                curad::Vec<std::int64_t, 2> volcoord, float coeff) {
-                       // proj(angle_idx, range_idx) = 1;
-                       proj(angle_idx, range_idx) +=
-                           static_cast<int>(in_aabb) * vol(volcoord) * coeff;
-                   });
+    const auto vol_offset = curad::Vec<float, 3>{0, 0, 0};
 
-    // CAPTURE(proj);
-    curad::write("test.pgm", projdata.data(), projdata.size(), det_size, num_angles);
-    // CHECK(false);
+    const float DSD = width * 10;
+    const float DSO = DSD * 0.7;
+
+    curad::fp::forward_3d(volume_ptr, vol_shape, vol_size, vol_spacing, vol_offset, sinogram_ptr,
+                          det_shape, det_spacing, angles, DSD, DSO);
+
+    thrust::host_vector<float> host_sino = sinogram;
+
+    const auto max = *std::max_element(host_sino.begin(), host_sino.end());
+    std::transform(host_sino.begin(), host_sino.end(), host_sino.begin(),
+                   [&](auto x) { return x / max; });
+    // draw(data.data(), 0, width, height, depth);
+    draw(host_sino.data(), 0, det_width, det_height, nangles);
 }
 
-TEST_CASE("read_data") {
-    auto [data, width, height] = curad::read("/home/david/src/work/curadon/data/phantom_0256.pgm");
+TEST_CASE("forward_projection_2d") {
+    auto [data, width, height, depth, ignore1, ignore2, ignore3] =
+        curad::easy::read("phantom_2d.txt");
 
-    std::vector<float> voldata(data.size());
-    for (int i = 0; i < voldata.size(); i++) {
-        voldata[i] = data[i];
-    }
+    // const auto width = 64;
+    // const auto height = 64;
+    // const auto depth = 1;
+    thrust::host_vector<float> host_volume(width * height * depth, 0);
 
-    curad::device_span<float> vol_span(voldata.data(), voldata.size());
-    curad::volume<float, 2> vol{vol_span, {width, height}};
-    auto aabb = vol.aabb();
+    // const auto box_width = 50;
+    // const auto x_offset = (width - box_width) / 2;
+    // const auto y_offset = (height - box_width) / 2;
+    // for (int i = x_offset; i < x_offset + box_width; ++i) {
+    //     for (int j = y_offset; j < y_offset + box_width; ++j) {
+    //         host_volume[i * width + j] = 1;
+    //     }
+    // }
+    std::copy(data.begin(), data.end(), host_volume.begin());
 
-    const auto num_angles = 360;
-    const auto det_size = static_cast<std::int64_t>(std::sqrt(2) * std::max(width, height));
-    std::vector<float> projdata(num_angles * det_size, 0);
+    thrust::device_vector<float> volume = host_volume;
+    auto volume_ptr = thrust::raw_pointer_cast(volume.data());
 
-    curad::device_span<float> proj_span(projdata.data(), projdata.size());
-    curad::projection_view<float, 1> proj(proj_span, {det_size, num_angles});
+    // compute angles
+    const std::size_t nangles = 8;
+    const float step = 22.5;
+    std::vector<float> angles(nangles);
+    thrust::sequence(angles.begin(), angles.end(), 0.f, step);
+    thrust::transform(angles.begin(), angles.end(), angles.begin(),
+                      [](auto x) { return x * M_PI / 180; });
 
-    curad::equally_spaced_angles<float> space(0, M_PI, num_angles);
-    // auto geometry =
-    //     curad::parallel_2d_geometry<float, curad::equally_spaced_angles<float>>(space, det_size);
-    auto geometry = curad::fan_beam_geometry<float, curad::equally_spaced_angles<float>>(
-        space, 10 * width, 2 * width, det_size);
+    // const std::size_t det_width = static_cast<std::size_t>(std::ceil(width * std::sqrt(2)));
+    const std::size_t det_width = width;
+    thrust::device_vector<float> sinogram(det_width * nangles, 0);
+    auto sinogram_ptr = thrust::raw_pointer_cast(sinogram.data());
 
-    curad::forward(aabb, vol, proj, geometry,
-                   [&] __host__(auto angle_idx, auto range_idx, bool in_aabb,
-                                curad::Vec<std::int64_t, 2> volcoord, float coeff) {
-                       proj(angle_idx, range_idx) +=
-                           static_cast<int>(in_aabb) * vol(volcoord) * coeff;
-                   });
+    const auto det_shape = det_width;
+    const float det_spacing = 1;
 
-    curad::write("test.pgm", projdata.data(), projdata.size(), det_size, num_angles);
+    const auto vol_shape = curad::Vec<std::uint64_t, 2>{width, height};
+
+    const auto vol_spacing = curad::Vec<float, 2>{1, 1};
+    const auto vol_size = vol_shape * vol_spacing;
+
+    const auto vol_offset = curad::Vec<float, 2>{0, 0};
+
+    const float DSD = width * 100;
+    const float DSO = DSD * 0.95;
+
+    curad::fp::forward_2d(volume_ptr, vol_shape, vol_size, vol_spacing, vol_offset, sinogram_ptr,
+                          det_shape, det_spacing, angles, DSD, DSO);
+
+    thrust::host_vector<float> host_sino = sinogram;
+
+    const auto max = *std::max_element(host_sino.begin(), host_sino.end());
+    std::transform(host_sino.begin(), host_sino.end(), host_sino.begin(),
+                   [&](auto x) { return x / max; });
+    // draw(data.data(), 0, width, height, depth);
+    draw(host_sino.data(), 0, det_width, nangles, 1);
 }

@@ -3,8 +3,6 @@
 #include "curadon/math/vector.hpp"
 #include "curadon/utils.hpp"
 
-#include "cuda/std/cmath"
-
 namespace curad {
 template <class T>
 class degree;
@@ -48,18 +46,15 @@ __host__ __device__ degree<T> radian<T>::to_degree() const noexcept {
     return value() * 180.0 / M_PI;
 }
 
-namespace detail {
-template <class T, std::int64_t Dim>
-__host__ __device__ auto rotate(T phi, Vec<T, Dim> v) -> Vec<T, Dim> {
-    auto s = cuda::std::sin(phi);
-    auto c = cuda::std::cos(phi);
-
-    return {v[0] * c - v[1] * s, v[0] * s + v[1] * c};
-}
-
-template <class T>
-__host__ __device__ auto perpendicular(Vec<T, 2> v) -> Vec<T, 2> {
-    return {-v[1], v[0]};
-}
-} // namespace detail
 } // namespace curad
+
+namespace curad::utils {
+/// Divide x by y and round up.
+///
+/// This is only really valid for integer types, but I'm to lazy to enforce that right now
+template <class T, class U>
+std::common_type_t<T, U> round_up_division(T x, U y) {
+    // TODO: 1 + ((x - 1) / y); avoid overflow, but is only allowed if x != 0
+    return (x + y - 1) / y;
+}
+} // namespace curad::utils

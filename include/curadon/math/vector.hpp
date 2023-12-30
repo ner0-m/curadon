@@ -46,11 +46,29 @@ class Vec {
 
     __host__ __device__ Vec &normalize();
 
-    __host__ __device__ static Vec<T, Dim> zero() noexcept {
+    __host__ __device__ T hprod() const {
+        T res = 1;
+#pragma unroll
+        for (int i = 0; i < Dim; ++i) {
+            res += (*this)[i];
+        }
+        return res;
+    }
+
+    __host__ __device__ static Vec<T, Dim> zeros() noexcept {
         Vec<T, Dim> res;
 #pragma unroll
         for (int i = 0; i < Dim; ++i) {
             res[i] = T(0);
+        }
+        return res;
+    }
+
+    __host__ __device__ static Vec<T, Dim> ones() noexcept {
+        Vec<T, Dim> res;
+#pragma unroll
+        for (int i = 0; i < Dim; ++i) {
+            res[i] = T(1);
         }
         return res;
     }
