@@ -27,32 +27,34 @@ static constexpr std::uint64_t projections_per_block_3d = 8;
 
 static constexpr std::int64_t num_projects_per_kernel_3d = 32;
 
-// __constant__ Vec<float, 3> dev_uv_origins[num_projects_per_kernel_3d];
-// __constant__ Vec<float, 3> dev_delta_us[num_projects_per_kernel_3d];
-// __constant__ Vec<float, 3> dev_delta_uvs[num_projects_per_kernel_3d];
-// __constant__ Vec<float, 3> dev_sources[num_projects_per_kernel_3d];
+__constant__ Vec<float, 3> dev_uv_origins[num_projects_per_kernel_3d];
+__constant__ Vec<float, 3> dev_delta_us[num_projects_per_kernel_3d];
+__constant__ Vec<float, 3> dev_delta_vs[num_projects_per_kernel_3d];
+__constant__ Vec<float, 3> dev_sources[num_projects_per_kernel_3d];
 
 /// tex is the volume
 template <class T>
-__global__ void kernel_forward(device_span_3d<T> sinogram, Vec<std::uint64_t, 3> vol_shape,
-                               float DSD, float DSO, cudaTextureObject_t tex, float accuracy,
-                               // These should be moved to constant memory
-                               Vec<float, 3> *uv_origins, Vec<float, 3> *delta_us,
-                               Vec<float, 3> *delta_vs, Vec<float, 3> *sources) {
+__global__ void kernel_forward_3d(device_span_3d<T> sinogram, Vec<std::uint64_t, 3> vol_shape,
+                                  float DSD, float DSO, cudaTextureObject_t tex, float accuracy,
+                                  std::uint64_t start_proj)
+// These should be moved to constant memory
+// Vec<float, 3> *uv_origins, Vec<float, 3> *delta_us,
+// Vec<float, 3> *delta_vs, Vec<float, 3> *sources)
+{
     const auto idx_u = threadIdx.x + blockIdx.x * blockDim.x;
     const auto idx_v = threadIdx.y + blockIdx.y * blockDim.y;
 
-    const auto proj_number = threadIdx.z + blockIdx.z * blockDim.z;
+    const auto proj_number = start_proj + threadIdx.z + blockIdx.z * blockDim.z;
 
     if (idx_u >= sinogram.shape()[0] || idx_v >= sinogram.shape()[1] ||
         proj_number >= sinogram.shape()[2]) {
         return;
     }
 
-    const auto uv_origin = uv_origins[proj_number];
-    const auto delta_u = delta_us[proj_number];
-    const auto delta_v = delta_vs[proj_number];
-    const auto source = sources[proj_number];
+    const auto uv_origin = dev_uv_origins[proj_number];
+    const auto delta_u = dev_delta_us[proj_number];
+    const auto delta_v = dev_delta_vs[proj_number];
+    const auto source = dev_sources[proj_number];
 
     // The detector point this thread is working on
     // const auto det_point = uv_origin + idx_u * delta_u + idx_v * delta_v;
@@ -96,15 +98,15 @@ __global__ void kernel_forward(device_span_3d<T> sinogram, Vec<std::uint64_t, 3>
 }
 } // namespace kernel
 
+namespace detail {
 template <class T, class U>
-void forward_3d(device_volume<T> vol, device_measurement<U> sino) {
-    auto volume = vol.device_data();
+void setup_constants(device_volume<T> vol, device_measurement<U> sino, std::uint64_t proj_idx,
+                     std::uint64_t num_proj) {
     const auto vol_shape = vol.shape();
     const auto vol_size = vol.extent();
     const auto vol_spacing = vol.spacing();
     const auto vol_offset = vol.offset();
 
-    auto sinogram = sino.device_data();
     const auto angles = sino.angles();
     const auto det_shape = sino.shape();
     const auto det_spacing = sino.spacing();
@@ -113,26 +115,14 @@ void forward_3d(device_volume<T> vol, device_measurement<U> sino) {
 
     const auto nangles = sino.nangles();
 
-    // TODO: make this configurable
-    const float accuracy = 1.f;
-
-    cudaArray_t array = detail::allocate_cuarray(vol_shape[0], vol_shape[1], vol_shape[2]);
-
-    cudaTextureObject_t tex;
-    detail::bind_texture_to_array(&tex, array);
-
-    // Copy to cuda array
-    detail::copy_projections_to_array(vol.kernel_span(), array);
-
-    // TODO: compute uv origins, delta_u, delta_v, sources
-    thrust::host_vector<Vec<float, 3>> host_uv_origins(nangles);
-    thrust::host_vector<Vec<float, 3>> host_deltas_us(nangles);
-    thrust::host_vector<Vec<float, 3>> host_delta_vs(nangles);
-    thrust::host_vector<Vec<float, 3>> host_sources(nangles);
+    std::vector<Vec<float, 3>> host_uv_origins;
+    std::vector<Vec<float, 3>> host_deltas_us;
+    std::vector<Vec<float, 3>> host_delta_vs;
+    std::vector<Vec<float, 3>> host_sources;
 
     // distance object to detector
     const auto DOD = DSD - DSO;
-    for (int i = 0; i < nangles; ++i) {
+    for (int i = proj_idx; i < proj_idx + num_proj; ++i) {
         Vec<float, 3> init_source({0, 0, -DSO});
 
         // Assume detector origin is at the bottom left corner, i.e. detector point (0, 0)
@@ -180,38 +170,110 @@ void forward_3d(device_volume<T> vol, device_measurement<U> sino) {
         // TODO
 
         // 7) store in host vector
-        host_uv_origins[i] = det_origin;
-        host_deltas_us[i] = delta_u - det_origin;
-        host_delta_vs[i] = delta_v - det_origin;
-        host_sources[i] = source;
+        host_uv_origins.push_back(det_origin);
+        host_deltas_us.push_back(delta_u - det_origin);
+        host_delta_vs.push_back(delta_v - det_origin);
+        host_sources.push_back(source);
     }
 
     // upload uv_origin, delta_u, delta_v, sources
-    thrust::device_vector<Vec<float, 3>> dev_uv_origins = host_uv_origins;
-    thrust::device_vector<Vec<float, 3>> dev_deltas_us = host_deltas_us;
-    thrust::device_vector<Vec<float, 3>> dev_delta_vs = host_delta_vs;
-    thrust::device_vector<Vec<float, 3>> dev_sources = host_sources;
+    gpuErrchk(cudaMemcpyToSymbol(kernel::dev_uv_origins, host_uv_origins.data(),
+                                 sizeof(curad::Vec<float, 3>) * host_uv_origins.size(), 0,
+                                 cudaMemcpyDefault));
 
-    auto uv_origins = thrust::raw_pointer_cast(dev_uv_origins.data());
-    auto deltas_us = thrust::raw_pointer_cast(dev_deltas_us.data());
-    auto delta_vs = thrust::raw_pointer_cast(dev_delta_vs.data());
-    auto sources = thrust::raw_pointer_cast(dev_sources.data());
+    gpuErrchk(cudaMemcpyToSymbol(kernel::dev_delta_us, host_deltas_us.data(),
+                                 sizeof(curad::Vec<float, 3>) * host_deltas_us.size(), 0,
+                                 cudaMemcpyDefault));
 
-    const std::uint64_t div_u = kernel::pixels_u_per_block_3d;
-    const std::uint64_t div_v = kernel::pixels_v_per_block_3d;
+    gpuErrchk(cudaMemcpyToSymbol(kernel::dev_delta_vs, host_delta_vs.data(),
+                                 sizeof(curad::Vec<float, 3>) * host_delta_vs.size(), 0,
+                                 cudaMemcpyDefault));
 
-    dim3 grid(utils::round_up_division(det_shape[0], div_u),
-              utils::round_up_division(det_shape[1], div_v),
-              utils::round_up_division(nangles, kernel::projections_per_block_3d));
-    dim3 block(div_u, div_v, kernel::projections_per_block_3d);
-
-    auto sino_span = sino.kernel_span();
-
-    kernel::kernel_forward<<<grid, block>>>(sino_span, vol_shape, DSD, DSO, tex, accuracy,
-                                            uv_origins, deltas_us, delta_vs, sources);
+    gpuErrchk(cudaMemcpyToSymbol(kernel::dev_sources, host_sources.data(),
+                                 sizeof(curad::Vec<float, 3>) * host_sources.size(), 0,
+                                 cudaMemcpyDefault));
 
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
+}
+} // namespace detail
+
+template <class T, class U>
+void forward_3d(device_volume<T> vol, device_measurement<U> sino) {
+    auto volume = vol.device_data();
+    const auto vol_shape = vol.shape();
+    const auto vol_size = vol.extent();
+    const auto vol_spacing = vol.spacing();
+    const auto vol_offset = vol.offset();
+
+    auto sinogram = sino.device_data();
+    const auto angles = sino.angles();
+    const auto det_shape = sino.shape();
+    const auto det_spacing = sino.spacing();
+    const auto DSD = sino.distance_source_to_detector();
+    const auto DSO = sino.distance_source_to_object();
+
+    const auto nangles = sino.nangles();
+
+    // TODO: make this configurable
+    const float accuracy = 1.f;
+
+    cudaArray_t array = ::curad::detail::allocate_cuarray(vol_shape[0], vol_shape[1], vol_shape[2]);
+
+    cudaTextureObject_t tex;
+    ::curad::detail::bind_texture_to_array(&tex, array);
+
+    // Copy to cuda array
+    ::curad::detail::copy_projections_to_array(vol.kernel_span(), array);
+
+    auto num_kernel_calls = utils::round_up_division(nangles, kernel::num_projects_per_kernel_3d);
+    for (int i = 0; i < num_kernel_calls; ++i) {
+        auto proj_idx = i * kernel::num_projects_per_kernel_3d;
+
+        auto projections_left = nangles - (i * kernel::num_projects_per_kernel_3d);
+        const auto num_projections =
+            std::min<int>(kernel::num_projects_per_kernel_3d, projections_left);
+
+        // upload uv_origin, delta_u, delta_v, sources
+        // thrust::device_vector<Vec<float, 3>> dev_uv_origins;
+        // thrust::device_vector<Vec<float, 3>> dev_deltas_us;
+        // thrust::device_vector<Vec<float, 3>> dev_delta_vs;
+        // thrust::device_vector<Vec<float, 3>> dev_sources;
+
+        // detail::setup_constants(vol, sino, proj_idx, num_projections, dev_uv_origins,
+        // dev_deltas_us,
+        //                         dev_delta_vs, dev_sources);
+        detail::setup_constants(vol, sino, proj_idx, num_projections);
+
+        // auto uv_origins = thrust::raw_pointer_cast(dev_uv_origins.data());
+        // auto deltas_us = thrust::raw_pointer_cast(dev_deltas_us.data());
+        // auto delta_vs = thrust::raw_pointer_cast(dev_delta_vs.data());
+        // auto sources = thrust::raw_pointer_cast(dev_sources.data());
+
+        const std::uint64_t div_u = kernel::pixels_u_per_block_3d;
+        const std::uint64_t div_v = kernel::pixels_v_per_block_3d;
+
+        dim3 grid(utils::round_up_division(det_shape[0], div_u),
+                  utils::round_up_division(det_shape[1], div_v),
+                  utils::round_up_division(num_projections, kernel::projections_per_block_3d));
+        dim3 block(div_u, div_v, kernel::projections_per_block_3d);
+
+        auto sino_span = sino.kernel_span();
+
+        std::cout << "Kernel call: " << i << " / " << num_kernel_calls << std::endl;
+        std::cout << "Grid: " << grid.x << " x " << grid.y << " x " << grid.z << std::endl;
+        std::cout << "block: " << block.x << " x " << block.y << " x " << block.z << "\n";
+
+        kernel::kernel_forward_3d<<<grid, block>>>(sino_span, vol_shape, DSD, DSO, tex, accuracy,
+                                                   proj_idx
+                                                   // , uv_origins, deltas_us, delta_vs, sources
+        );
+
+        // TODO: These should be moved to the outside of the loop, but currently, I'm not 100% sure
+        // it's safe
+        gpuErrchk(cudaPeekAtLastError());
+        gpuErrchk(cudaDeviceSynchronize());
+    }
 }
 
 } // namespace curad::fp
