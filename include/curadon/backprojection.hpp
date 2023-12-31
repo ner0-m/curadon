@@ -52,17 +52,17 @@ __global__ void kernel_backprojection(device_span_3d<T> volume, Vec<float, 3> so
 
     // Second step, for all projections this kernel performs, do the backprojection
     // for all voxels this thread is associated with
-    for (int i = 0; i < num_projects_per_kernel; ++i) {
-        auto idx_proj = cur_projection * num_projects_per_kernel + i;
+    for (int proj = 0; proj < num_projects_per_kernel; ++proj) {
+        auto idx_proj = cur_projection * num_projects_per_kernel + proj;
 
         if (idx_proj >= total_projections) {
             break;
         }
 
-        auto vol_origin = dev_vol_origin[i];
-        auto delta_x = dev_delta_x[i];
-        auto delta_y = dev_delta_y[i];
-        auto delta_z = dev_delta_z[i];
+        auto vol_origin = dev_vol_origin[proj];
+        auto delta_x = dev_delta_x[proj];
+        auto delta_y = dev_delta_y[proj];
+        auto delta_z = dev_delta_z[proj];
 
 #pragma unroll
         for (int z = 0; z < num_voxels_per_thread; ++z) {
@@ -87,7 +87,7 @@ __global__ void kernel_backprojection(device_span_3d<T> volume, Vec<float, 3> so
             auto u = (dir[0] * t + source[0]) + det_shape[0] / 2;
             auto v = (dir[1] * t + source[1]) + det_shape[1] / 2;
 
-            auto sample = tex3D<float>(tex, u, v, i + 0.5f);
+            auto sample = tex3D<float>(tex, u, v, proj + 0.5f);
 
             local_volume[z] += sample;
         }
@@ -117,13 +117,17 @@ cudaArray_t allocate_cuarray(std::size_t width, std::size_t height, std::size_t 
 }
 
 template <class T>
-void copy_projections_to_array(T *sinogram, std::size_t offset, cudaArray_t array_cu,
-                               std::size_t width, std::size_t height, std::size_t num_projections) {
+void copy_projections_to_array(device_span_3d<T> sino, cudaArray_t array_cu) {
     // Copy to cuda array
     cudaMemcpy3DParms copyParams = {0};
 
-    auto ptr = sinogram + offset;
-    copyParams.srcPtr = make_cudaPitchedPtr((void *)ptr, width * sizeof(float), width, height);
+    auto ptr = sino.device_data();
+    const auto width = sino.shape()[0];
+    const auto height = sino.shape()[1];
+    const auto width_bytes = sizeof(T) * width;
+    const auto num_projections = sino.shape()[2];
+
+    copyParams.srcPtr = make_cudaPitchedPtr((void *)ptr, width_bytes, width, height);
 
     const cudaExtent extent = make_cudaExtent(width, height, num_projections);
     gpuErrchk(cudaPeekAtLastError());
@@ -135,7 +139,7 @@ void copy_projections_to_array(T *sinogram, std::size_t offset, cudaArray_t arra
     gpuErrchk(cudaPeekAtLastError());
 }
 
-void copy_to_texture(cudaTextureObject_t *tex, cudaArray_t array_cu) {
+void bind_texture_to_array(cudaTextureObject_t *tex, cudaArray_t array_cu) {
     cudaResourceDesc texRes;
     memset(&texRes, 0, sizeof(cudaResourceDesc));
     texRes.resType = cudaResourceTypeArray;
@@ -154,8 +158,7 @@ void copy_to_texture(cudaTextureObject_t *tex, cudaArray_t array_cu) {
 }
 
 void setup_constants(std::size_t start_proj, std::size_t num_projections, Vec<float, 3> vol_size,
-                     Vec<float, 3> vol_spacing, Vec<float, 3> vol_offset,
-                     const std::vector<float> &angles) {
+                     Vec<float, 3> vol_spacing, Vec<float, 3> vol_offset, span<float> angles) {
     std::vector<curad::Vec<float, 3>> vol_origins;
     std::vector<curad::Vec<float, 3>> delta_xs;
     std::vector<curad::Vec<float, 3>> delta_ys;
@@ -203,15 +206,18 @@ void setup_constants(std::size_t start_proj, std::size_t num_projections, Vec<fl
 } // namespace detail
 
 template <class T, class U>
-void backproject_3d(device_volume<T> volume, U *sinogram, std::int64_t sino_width,
-                    std::int64_t sino_height, Vec<std::uint64_t, 2> det_shape,
-                    std::vector<float> angles, Vec<float, 3> source, float DSD, float DSO) {
-    const auto nangles = angles.size();
+void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
+    const auto nangles = sinogram.nangles();
+    const auto sino_width = sinogram.shape()[0];
+    const auto sino_height = sinogram.shape()[1];
 
     // allocate cuda array for sinogram
     auto array_cu = detail::allocate_cuarray(sino_width, sino_height, num_projects_per_kernel);
 
     cudaTextureObject_t tex;
+
+    // Bind cuda array containing the sinogram to the texture
+    detail::bind_texture_to_array(&tex, array_cu);
 
     auto num_kernel_calls =
         (nangles + curad::num_projects_per_kernel - 1) / curad::num_projects_per_kernel;
@@ -226,18 +232,20 @@ void backproject_3d(device_volume<T> volume, U *sinogram, std::int64_t sino_widt
             std::min<int>(curad::num_projects_per_kernel, projections_left);
 
         // Copy projection data necessary for the next kernel to cuda array
-        detail::copy_projections_to_array(sinogram, proj_idx * sino_width * sino_height, array_cu,
-                                          sino_width, sino_height, num_projections);
-
-        // Bind cuda array containing the sinogram to the texture
-        detail::copy_to_texture(&tex, array_cu);
+        const auto sub_sino = sinogram.slice(proj_idx, num_projections);
+        detail::copy_projections_to_array(sub_sino, array_cu);
 
         // kernel uses variables stored in __constant__ memory, e.g. volume origin, volume
         // deltas Compute them here and upload them
         detail::setup_constants(proj_idx, num_projections, volume.extent(), volume.spacing(),
-                                volume.offset(), angles);
+                                volume.offset(), sinogram.phi());
 
         auto vol_span = volume.kernel_span();
+
+        const auto source = sinogram.source();
+        const auto DSD = sinogram.distance_source_to_detector();
+        const auto DSO = sinogram.distance_source_to_object();
+        const auto det_shape = sinogram.detector_shape();
 
         int divx = 16;
         int divy = 32;

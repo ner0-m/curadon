@@ -1,7 +1,8 @@
 #pragma once
 
 #include "curadon/math/vector.hpp"
-#include <thrust/device_vector.h>
+#include "curadon/span.hpp"
+
 namespace curad {
 
 /// Simple std::span like abstraction, but way less features and kernel ready
@@ -148,119 +149,123 @@ class device_volume {
     Vec<float, Dim> offset_;
 };
 
-/// Non-onwing span over stack of 2D x-ray projections stored in device memory
-/// TODO: This assumes a single detector and source for the completely measurement, relax it at some
-/// point
-/// TODO: as long as we store thrust::device_vectors here, we can not use this
-/// in kernels, which I might want to do? I'm not sure yet
-// template <class T>
-// class device_measurement {
-//   public:
-//     static constexpr int Dim = 3;
-//     static constexpr int DetectorDim = 2;
-//
-//     device_measurement(T *data, Vec<std::uint64_t, DetectorDim> det_shape, float DSD, float DSO,
-//                        thrust::device_vector<float> phi)
-//         : data_(data, {det_shape.x(), det_shape.y(), phi.size()})
-//         , det_shape_(det_shape)
-//         , det_spacing_(Vec<float, DetectorDim>::ones())
-//         , det_offset_(Vec<float, DetectorDim>::zeros())
-//         , nangles_(psi.size())
-//         , DSD(DSD)
-//         , DSO(DSO)
-//         , COR(0)
-//         , phi_(phi)
-//         , theta_()
-//         , psi_()
-//         , pitch_()
-//         , roll_()
-//         , yaw_() {}
-//
-//     __host__ __device__ std::uint64_t projection_dim() const { return DetectorDim; }
-//
-//     // TODO: Maybe rename, to indicate this is for the complete data
-//     __host__ __device__ std::uint64_t size() const { return data_.size(); }
-//
-//     __host__ __device__ Vec<std::uint64_t, Dim> shape() const { return data_.shape(); }
-//
-//     __host__ __device__ std::uint64_t nbytes() const { return data_.nbytes(); }
-//
-//     __host__ __device__ std::uint64_t proj_size() const { return det_shape_.hprod(); }
-//
-//     __host__ __device__ std::uint64_t nangles() const { return nangles_; }
-//
-//     __host__ __device__ Vec<float, Dim> det_shape() const { return det_shape_; }
-//
-//     __host__ __device__ Vec<float, Dim> det_spacing() const { return spacing_; }
-//
-//     __host__ __device__ Vec<float, Dim> det_extend() const { return extend_; }
-//
-//     __host__ __device__ float distance_source_detector() const { return DSD; }
-//
-//     __host__ __device__ float distance_source_object() const { return DSO; }
-//
-//     __host__ __device__ float distance_source_detecetor() const { return DSD - DSO; }
-//
-//     // TODO: Maybe remove this, but conviniente if simple circular trajectory
-//     __host__ thrust::device_vector<float> angles() const { return phi_; }
-//
-//     __host__ thrust::device_vector<float> phi() const { return phi_; }
-//
-//     __host__ thrust::device_vector<float> theta() const { return theta_; }
-//
-//     __host__ thrust::device_vector<float> psi() const { return psi_; }
-//
-//     __host__ __device__ T *device_data() { return data_; }
-//
-//     __host__ __device__ T const *device_data() const { return data_; }
-//
-//     __host__ __device T *device_proj_data(std::uint64_t proj) {
-//         return data_.data() + proj_size() * proj;
-//     }
-//
-//     __host__ __device T const *device_proj_data(std::uint64_t proj) const {
-//         return data_.data() + proj_size() * proj;
-//     }
-//
-//     __device__ T &operator()(std::uint64_t u, std::uint64_t v, std::uint64_t proj) {
-//         return data_(u, v, proj);
-//     }
-//
-//     __device__ const T &operator()(std::uint64_t u, std::uint64_t v, std::uint64_t proj) const {
-//         return data_(u, v, proj);
-//     }
-//
-//   private:
-//     device_span_3d<T> data_;
-//
-//     Vec<std::uint64_t, DetectorDim> det_shape_;
-//
-//     Vec<float, DetectorDim> det_spacing_;
-//
-//     Vec<float, DetectorDim> det_extent_;
-//
-//     Vec<float, Dim> det_offset_;
-//
-//     // Geometry information about measurements
-//     std::uint64_t nangles_;
-//
-//     /// Distance source to detector
-//     float DSD;
-//
-//     /// Distance source to object / center of rotation
-//     float DSO;
-//
-//     /// Center of rotation correction (TODO: actually use it)
-//     float COR = 0;
-//
-//     // euler angles in radian, TODO: change to device_uvector
-//     thrust::device_vector<float> phi_;
-//     thrust::device_vector<float> theta_; // TODO: expose
-//     thrust::device_vector<float> psi_;   // TODO: expose
-//
-//     // Detector rotation in radians, TODO: maybe make this a vector? TODO: expose
-//     float pitch_;
-//     float roll_;
-//     float yaw_;
-// };
+template <class T>
+class device_measurement {
+  public:
+    static constexpr int Dim = 3;
+    static constexpr int DetectorDim = 2;
+
+    device_measurement(T *data, Vec<std::uint64_t, DetectorDim> shape, float DSD, float DSO,
+                       std::vector<float> phi)
+        : device_measurement(data, shape, Vec<float, DetectorDim>::ones(), DSD, DSO, phi) {}
+
+    device_measurement(T *data, Vec<std::uint64_t, DetectorDim> shape,
+                       Vec<float, DetectorDim> spacing, float DSD, float DSO,
+                       std::vector<float> phi)
+        : device_measurement(data, shape, Vec<float, DetectorDim>::ones(),
+                             Vec<float, DetectorDim>::zeros(), DSD, DSO, phi) {}
+
+    device_measurement(T *data, Vec<std::uint64_t, DetectorDim> shape,
+                       Vec<float, DetectorDim> spacing, Vec<float, DetectorDim> offset, float DSD,
+                       float DSO, std::vector<float> phi)
+        : data_(data, {shape.x(), shape.y(), phi.size()})
+        , spacing_(spacing)
+        , offset_(offset)
+        , extent_(shape * spacing_)
+        , nangles_(phi.size())
+        , DSD(DSD)
+        , DSO(DSO)
+        , COR(0)
+        , phi_(phi)
+        , theta_()
+        , psi_()
+        , pitch_(0)
+        , roll_(0)
+        , yaw_(0) {}
+
+    std::uint64_t size() const { return data_.size(); }
+
+    std::uint64_t nbytes() const { return data_.nbytes(); }
+
+    T *device_data() { return data_.device_data(); }
+
+    T const *device_data() const { return data_.device_data(); }
+
+    Vec<std::uint64_t, Dim> shape() const { return data_.shape(); }
+
+    Vec<std::uint64_t, DetectorDim> detector_shape() const {
+        return {data_.shape()[0], data_.shape()[1]};
+    }
+
+    Vec<float, DetectorDim> spacing() const { return spacing_; }
+
+    Vec<float, DetectorDim> extent() const { return extent_; }
+
+    Vec<float, DetectorDim> offset() const { return offset_; }
+
+    device_span_3d<T> kernel_span() { return data_; }
+
+    std::uint64_t nangles() const { return nangles_; }
+
+    float distance_source_to_detector() const { return DSD; }
+
+    float distance_source_to_object() const { return DSO; }
+
+    float distance_object_to_detector() const { return DSD - DSO; }
+
+    span<float> angles() { return span<float>(phi_.data(), phi_.size()); }
+
+    span<float> phi() { return span<float>(phi_.data(), phi_.size()); }
+
+    span<float> theta() { return span<float>(theta_.data(), theta_.size()); }
+
+    span<float> psi() { return span<float>(psi_.data(), psi_.size()); }
+
+    float pitch() const { return pitch_; }
+
+    float roll() const { return roll_; }
+
+    float yaw() const { return yaw_; }
+
+    Vec<float, Dim> source() const { return {0, 0, -distance_source_to_object()}; }
+
+    device_span_3d<T> slice(std::uint64_t offset, std::uint64_t count = 1) {
+        Vec<std::uint64_t, Dim> new_shape{shape()[0], shape()[1], count};
+        auto ptr = device_data() + offset * data_.strides()[2];
+        return device_span_3d<T>(ptr, new_shape);
+    }
+
+  private:
+    device_span_3d<T> data_;
+
+    Vec<float, DetectorDim> spacing_;
+
+    Vec<float, DetectorDim> extent_;
+
+    Vec<float, DetectorDim> offset_;
+
+    // Geometry information about measurements
+    std::uint64_t nangles_;
+
+    /// Distance source to detector
+    float DSD;
+
+    /// Distance source to object / center of rotation
+    float DSO;
+
+    // euler angles in radian, TODO: change to device_uvector? But we only need it in the
+    // pre-computing phase, so let's think about this a little more
+    std::vector<float> phi_;
+    std::vector<float> theta_; // TODO: enable in constructor
+    std::vector<float> psi_;   // TODO: enable in constructor
+
+    // Detector rotation in radians, TODO: maybe make this a vector?
+    float pitch_;
+    float roll_;
+    float yaw_;
+
+    /// Center of rotation correction (TODO: actually use it)
+    float COR = 0;
+};
+
 } // namespace curad

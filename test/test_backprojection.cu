@@ -42,10 +42,9 @@ TEST_CASE("test_backprojection") {
     auto vol_offset = curad::Vec<float, 3>{0, 0, 0};
 
     curad::device_volume<float> vol_span(volume_ptr, vol_shape, vol_spacing, vol_offset);
+    curad::device_measurement<float> sino_span(sino_ptr, {width, height}, DSD, DSO, angles);
 
-    curad::Vec<float, 3> source({0, 0, -DSO});
-
-    curad::backproject_3d(vol_span, sino_ptr, width, height, det_shape, angles, source, DSD, DSO);
+    curad::backproject_3d(vol_span, sino_span);
 
     thrust::host_vector<float> vol_host = volume;
 
