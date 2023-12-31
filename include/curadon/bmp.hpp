@@ -97,10 +97,6 @@ read_sino(std::istream &stream) {
     float DSD;
     stream >> aux >> DSD;
 
-    std::cout << "DSO: " << DSO << "\n";
-    // std::cout << "aux: " << aux << "\n";
-    std::cout << "DSD: " << DSD << "\n";
-
     auto size = width * height * nangles;
     std::vector<float> data;
     data.reserve(size);
