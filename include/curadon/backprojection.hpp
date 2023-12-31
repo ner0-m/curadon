@@ -1,6 +1,7 @@
 #pragma once
 
 #include "curadon/cuda/error.h"
+#include "curadon/detail/texture.hpp"
 #include "curadon/device_span.hpp"
 #include "curadon/math/vector.hpp"
 #include "curadon/rotation.h"
@@ -106,57 +107,6 @@ __global__ void kernel_backprojection(device_span_3d<T> volume, Vec<float, 3> so
 }
 
 namespace detail {
-cudaArray_t allocate_cuarray(std::size_t width, std::size_t height, std::size_t depth) {
-    const cudaExtent extent_alloc = make_cudaExtent(width, height, depth);
-    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
-    cudaArray_t array;
-    cudaMalloc3DArray(&array, &channelDesc, extent_alloc);
-    gpuErrchk(cudaPeekAtLastError());
-
-    return array;
-}
-
-template <class T>
-void copy_projections_to_array(device_span_3d<T> sino, cudaArray_t array_cu) {
-    // Copy to cuda array
-    cudaMemcpy3DParms copyParams = {0};
-
-    auto ptr = sino.device_data();
-    const auto width = sino.shape()[0];
-    const auto height = sino.shape()[1];
-    const auto width_bytes = sizeof(T) * width;
-    const auto num_projections = sino.shape()[2];
-
-    copyParams.srcPtr = make_cudaPitchedPtr((void *)ptr, width_bytes, width, height);
-
-    const cudaExtent extent = make_cudaExtent(width, height, num_projections);
-    gpuErrchk(cudaPeekAtLastError());
-    copyParams.dstArray = array_cu;
-    copyParams.extent = extent;
-    copyParams.kind = cudaMemcpyDefault;
-    cudaMemcpy3DAsync(&copyParams, 0); // TODO: use stream pool
-    cudaStreamSynchronize(0);
-    gpuErrchk(cudaPeekAtLastError());
-}
-
-void bind_texture_to_array(cudaTextureObject_t *tex, cudaArray_t array_cu) {
-    cudaResourceDesc texRes;
-    memset(&texRes, 0, sizeof(cudaResourceDesc));
-    texRes.resType = cudaResourceTypeArray;
-    texRes.res.array.array = array_cu;
-    cudaTextureDesc texDescr;
-    memset(&texDescr, 0, sizeof(cudaTextureDesc));
-    texDescr.normalizedCoords = false;
-    texDescr.filterMode = cudaFilterModeLinear;
-    texDescr.addressMode[0] = cudaAddressModeBorder;
-    texDescr.addressMode[1] = cudaAddressModeBorder;
-    texDescr.addressMode[2] = cudaAddressModeBorder;
-    texDescr.readMode = cudaReadModeElementType;
-
-    cudaCreateTextureObject(tex, &texRes, &texDescr, NULL);
-    gpuErrchk(cudaPeekAtLastError());
-}
-
 void setup_constants(std::size_t start_proj, std::size_t num_projections, Vec<float, 3> vol_size,
                      Vec<float, 3> vol_spacing, Vec<float, 3> vol_offset, span<float> angles) {
     std::vector<curad::Vec<float, 3>> vol_origins;

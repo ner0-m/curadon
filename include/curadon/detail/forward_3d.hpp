@@ -1,6 +1,7 @@
 #pragma once
 
 #include "curadon/cuda/error.h"
+#include "curadon/detail/texture.hpp"
 #include "curadon/device_span.hpp"
 #include "curadon/math/vector.hpp"
 #include "curadon/rotation.h"
@@ -23,6 +24,13 @@ namespace kernel {
 static constexpr std::uint64_t pixels_u_per_block_3d = 8;
 static constexpr std::uint64_t pixels_v_per_block_3d = 8;
 static constexpr std::uint64_t projections_per_block_3d = 8;
+
+static constexpr std::int64_t num_projects_per_kernel_3d = 32;
+
+// __constant__ Vec<float, 3> dev_uv_origins[num_projects_per_kernel_3d];
+// __constant__ Vec<float, 3> dev_delta_us[num_projects_per_kernel_3d];
+// __constant__ Vec<float, 3> dev_delta_uvs[num_projects_per_kernel_3d];
+// __constant__ Vec<float, 3> dev_sources[num_projects_per_kernel_3d];
 
 /// tex is the volume
 template <class T>
@@ -108,48 +116,13 @@ void forward_3d(device_volume<T> vol, device_measurement<U> sino) {
     // TODO: make this configurable
     const float accuracy = 1.f;
 
-    // TODO: bind volume to texture
-    cudaTextureObject_t tex;
+    cudaArray_t array = detail::allocate_cuarray(vol_shape[0], vol_shape[1], vol_shape[2]);
 
-    // allocate cuarray with size of volume
-    const cudaExtent extent_alloc = make_cudaExtent(vol_shape[0], vol_shape[1], vol_shape[2]);
-    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
-    cudaArray_t array;
-    gpuErrchk(cudaMalloc3DArray(&array, &channelDesc, extent_alloc));
-    gpuErrchk(cudaPeekAtLastError());
+    cudaTextureObject_t tex;
+    detail::bind_texture_to_array(&tex, array);
 
     // Copy to cuda array
-    cudaMemcpy3DParms copyParams = {0};
-
-    copyParams.srcPtr =
-        make_cudaPitchedPtr((void *)volume, vol_shape[0] * sizeof(T), vol_shape[0], vol_shape[1]);
-
-    copyParams.dstArray = array;
-    copyParams.extent = extent_alloc;
-    copyParams.kind = cudaMemcpyDefault;
-    gpuErrchk(cudaMemcpy3DAsync(&copyParams, 0)); // TODO: use stream pool
-    gpuErrchk(cudaStreamSynchronize(0));
-    gpuErrchk(cudaPeekAtLastError());
-
-    // bind texture
-    cudaResourceDesc texRes;
-    memset(&texRes, 0, sizeof(cudaResourceDesc));
-    texRes.resType = cudaResourceTypeArray;
-    texRes.res.array.array = array;
-    cudaTextureDesc texDescr;
-    memset(&texDescr, 0, sizeof(cudaTextureDesc));
-    texDescr.normalizedCoords = false;
-    texDescr.filterMode = cudaFilterModeLinear;
-    texDescr.addressMode[0] = cudaAddressModeBorder;
-    texDescr.addressMode[1] = cudaAddressModeBorder;
-    texDescr.addressMode[2] = cudaAddressModeBorder;
-    texDescr.readMode = cudaReadModeElementType;
-
-    gpuErrchk(cudaCreateTextureObject(&tex, &texRes, &texDescr, NULL));
-    gpuErrchk(cudaPeekAtLastError());
-
-    cudaResourceDesc desc;
-    cudaGetTextureObjectResourceDesc(&desc, tex);
+    detail::copy_projections_to_array(vol.kernel_span(), array);
 
     // TODO: compute uv origins, delta_u, delta_v, sources
     thrust::host_vector<Vec<float, 3>> host_uv_origins(nangles);
