@@ -24,10 +24,10 @@ __constant__ Vec<float, 3> dev_delta_z[num_projects_per_kernel];
 // TODO: have constant memory array for sources!
 
 template <class T>
-__global__ void kernel_backprojection(device_span_3d<T> volume, Vec<float, 3> source, float DSD,
-                                      float DSO, Vec<std::uint64_t, 2> det_shape,
-                                      std::int64_t cur_projection, std::int64_t total_projections,
-                                      cudaTextureObject_t tex) {
+__global__ void kernel_backprojection_3d(device_span_3d<T> volume, Vec<float, 3> source, float DSD,
+                                         float DSO, Vec<std::uint64_t, 2> det_shape,
+                                         std::int64_t cur_projection,
+                                         std::int64_t total_projections, cudaTextureObject_t tex) {
     auto idx_x = blockIdx.x * blockDim.x + threadIdx.x;
     auto idx_y = blockIdx.y * blockDim.y + threadIdx.y;
     auto start_idx_z = blockIdx.z * num_voxels_per_thread + threadIdx.z;
@@ -208,7 +208,7 @@ void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
         int block_y = (vol_shape[1] + divy - 1) / divy;
         int block_z = (vol_shape[2] + divz - 1) / divz;
         dim3 num_blocks(block_x, block_y, block_z);
-        kernel_backprojection<<<num_blocks, threads_per_block>>>(vol_span, source, DSD, DSO,
+        kernel_backprojection_3d<<<num_blocks, threads_per_block>>>(vol_span, source, DSD, DSO,
                                                                  det_shape, i, nangles, tex);
 
         gpuErrchk(cudaPeekAtLastError());
