@@ -89,12 +89,21 @@ __global__ void kernel_forward(device_span_3d<T> sinogram, Vec<std::uint64_t, 3>
 } // namespace kernel
 
 template <class T, class U>
-void forward_3d(T *volume, Vec<std::uint64_t, 3> vol_shape, Vec<float, 3> vol_size,
-                Vec<float, 3> vol_spacing, Vec<float, 3> vol_offset, U *sinogram,
-                Vec<std::uint64_t, 2> det_shape, Vec<float, 2> det_spacing,
-                std::vector<float> angles, float DSD, float DSO) {
+void forward_3d(device_volume<T> vol, device_measurement<U> sino) {
+    auto volume = vol.device_data();
+    const auto vol_shape = vol.shape();
+    const auto vol_size = vol.extent();
+    const auto vol_spacing = vol.spacing();
+    const auto vol_offset = vol.offset();
 
-    std::size_t nangles = angles.size();
+    auto sinogram = sino.device_data();
+    const auto angles = sino.angles();
+    const auto det_shape = sino.shape();
+    const auto det_spacing = sino.spacing();
+    const auto DSD = sino.distance_source_to_detector();
+    const auto DSO = sino.distance_source_to_object();
+
+    const auto nangles = sino.nangles();
 
     // TODO: make this configurable
     const float accuracy = 1.f;
@@ -116,7 +125,7 @@ void forward_3d(T *volume, Vec<std::uint64_t, 3> vol_shape, Vec<float, 3> vol_si
         make_cudaPitchedPtr((void *)volume, vol_shape[0] * sizeof(T), vol_shape[0], vol_shape[1]);
 
     copyParams.dstArray = array;
-    copyParams.extent = make_cudaExtent(vol_shape[0], vol_shape[1], vol_shape[2]);
+    copyParams.extent = extent_alloc;
     copyParams.kind = cudaMemcpyDefault;
     gpuErrchk(cudaMemcpy3DAsync(&copyParams, 0)); // TODO: use stream pool
     gpuErrchk(cudaStreamSynchronize(0));
@@ -223,12 +232,7 @@ void forward_3d(T *volume, Vec<std::uint64_t, 3> vol_shape, Vec<float, 3> vol_si
               utils::round_up_division(nangles, kernel::projections_per_block_3d));
     dim3 block(div_u, div_v, kernel::projections_per_block_3d);
 
-    device_span_3d<T> sino_span(sinogram, {det_shape[0], det_shape[1], nangles});
-
-    std::cout << "sino shape: " << sino_span.shape()[0] << ", " << sino_span.shape()[1] << ", "
-              << sino_span.shape()[2] << std::endl;
-    std::cout << "sino strides: " << sino_span.strides()[0] << ", " << sino_span.strides()[1]
-              << ", " << sino_span.strides()[2] << std::endl;
+    auto sino_span = sino.kernel_span();
 
     kernel::kernel_forward<<<grid, block>>>(sino_span, vol_shape, DSD, DSO, tex, accuracy,
                                             uv_origins, deltas_us, delta_vs, sources);

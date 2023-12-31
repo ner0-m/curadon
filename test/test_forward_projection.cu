@@ -48,8 +48,11 @@ TEST_CASE("forward_projection_3d") {
     const float DSD = width * 10;
     const float DSO = DSD * 0.7;
 
-    curad::fp::forward_3d(volume_ptr, vol_shape, vol_size, vol_spacing, vol_offset, sinogram_ptr,
-                          det_shape, det_spacing, angles, DSD, DSO);
+    curad::device_volume<float> vol_span(volume_ptr, vol_shape, vol_spacing, vol_offset);
+    curad::device_measurement<float> sino_span(sinogram_ptr, {det_width, det_height}, DSD, DSO,
+                                               angles);
+
+    curad::fp::forward_3d(vol_span, sino_span);
 
     thrust::host_vector<float> host_sino = sinogram;
 
