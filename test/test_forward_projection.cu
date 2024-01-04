@@ -12,8 +12,8 @@
 #include <thrust/host_vector.h>
 #include <thrust/sequence.h>
 
-#include "show.hpp"
 #include "read.hpp"
+#include "show.hpp"
 
 TEST_CASE("forward_projection_3d") {
     auto [data, width, height, depth, ignore1, ignore2, ignore3] = curad::easy::read("phantom.txt");
@@ -64,34 +64,20 @@ TEST_CASE("forward_projection_3d") {
 }
 
 TEST_CASE("forward_projection_2d") {
-    auto [data, width, height, depth, ignore1, ignore2, ignore3] =
-        curad::easy::read("phantom_2d.txt");
+    auto [data, width, height, ign1, ign2, ign3, ign4] = curad::easy::read("phantom_2d.txt");
 
-    // const auto width = 64;
-    // const auto height = 64;
-    // const auto depth = 1;
-    thrust::host_vector<float> host_volume(width * height * depth, 0);
+    thrust::host_vector<float> host_volume(width * height, 0);
 
-    // const auto box_width = 50;
-    // const auto x_offset = (width - box_width) / 2;
-    // const auto y_offset = (height - box_width) / 2;
-    // for (int i = x_offset; i < x_offset + box_width; ++i) {
-    //     for (int j = y_offset; j < y_offset + box_width; ++j) {
-    //         host_volume[i * width + j] = 1;
-    //     }
-    // }
     std::copy(data.begin(), data.end(), host_volume.begin());
 
     thrust::device_vector<float> volume = host_volume;
     auto volume_ptr = thrust::raw_pointer_cast(volume.data());
 
     // compute angles
-    const std::size_t nangles = 8;
-    const float step = 22.5;
+    const std::size_t nangles = 360;
+    const float step = 2.f * M_PI / nangles;
     std::vector<float> angles(nangles);
     thrust::sequence(angles.begin(), angles.end(), 0.f, step);
-    thrust::transform(angles.begin(), angles.end(), angles.begin(),
-                      [](auto x) { return x * M_PI / 180; });
 
     // const std::size_t det_width = static_cast<std::size_t>(std::ceil(width * std::sqrt(2)));
     const std::size_t det_width = width;
