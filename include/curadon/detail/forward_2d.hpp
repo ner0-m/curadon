@@ -79,7 +79,6 @@ __global__ void kernel_forward_2d(T *sinogram, vec<u64, 2> vol_shape, f32 DSD, f
     vec2f p;
     f32 accumulator = 0;
 
-    auto step = 0;
     for (f32 t = tmin; t <= tmax; t += step_length) {
         p = dir * t + source;
         const auto partial = tex2D<f32>(tex, p.x(), p.y());
@@ -110,8 +109,9 @@ void forward_2d(T *volume, vec<u64, 2> vol_shape, vec2f vol_size, vec2f vol_spac
     gpuErrchk(cudaMallocArray(&array, &channelDesc, vol_shape[0], vol_shape[1]));
     gpuErrchk(cudaPeekAtLastError());
 
-    const auto size = vol_shape[0] * vol_shape[1] * sizeof(f32);
-    gpuErrchk(cudaMemcpyToArray(array, 0, 0, volume, size, cudaMemcpyDefault));
+    const auto size = vol_shape[0] * sizeof(f32);
+    gpuErrchk(
+        cudaMemcpy2DToArray(array, 0, 0, volume, size, size, vol_shape[1], cudaMemcpyDefault));
     gpuErrchk(cudaStreamSynchronize(0));
     gpuErrchk(cudaPeekAtLastError());
 
@@ -212,15 +212,14 @@ void forward_2d(T *volume, vec<u64, 2> vol_shape, vec2f vol_size, vec2f vol_spac
 
         // Move sinogram ptr ahead
         auto sinogram_ptr = sinogram + proj_idx * det_shape;
-        std::cout << "Calling kernel for projection " << proj_idx << " / " << nangles
-                  << " (start angle: " << angles[proj_idx] * 180. / M_PI << ")\n";
         kernel::kernel_forward_2d<<<grid, block>>>(sinogram_ptr, vol_shape, DSD, DSO, det_shape,
                                                    nangles, tex, accuracy, uv_origins, deltas_us,
                                                    sources);
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
-        std::cout << "\n";
     }
+
+    cudaDestroyTextureObject(tex);
 }
 
 } // namespace curad::fp
