@@ -18,12 +18,6 @@ TEST_CASE("test_backprojection") {
     const auto volsize = 64;
     auto [data, width, height, nangles, angles, DSO, DSD] = curad::easy::read("demofile2.txt");
 
-    // CHECK_EQ(width, 16);
-    // CHECK_EQ(height, 16);
-    // CHECK_EQ(nangles, 1);
-    // CHECK_EQ(DSO, 100);
-    // CHECK_EQ(DSD, 120);
-
     thrust::host_vector<float> host_sino(width * height * nangles, 0);
     std::copy(data.begin(), data.end(), host_sino.begin());
 

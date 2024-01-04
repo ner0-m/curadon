@@ -36,7 +36,6 @@ TEST_CASE("forward_projection_3d") {
     auto sinogram_ptr = thrust::raw_pointer_cast(sinogram.data());
 
     const auto det_shape = curad::Vec<std::uint64_t, 2>{det_width, det_height};
-    const auto det_spacing = curad::Vec<float, 2>{1, 1};
 
     const auto vol_shape = curad::Vec<std::uint64_t, 3>{width, height, depth};
 
@@ -49,8 +48,9 @@ TEST_CASE("forward_projection_3d") {
     const float DSO = DSD * 0.7;
 
     curad::device_volume<float> vol_span(volume_ptr, vol_shape, vol_spacing, vol_offset);
-    curad::device_measurement<float> sino_span(sinogram_ptr, {det_width, det_height}, DSD, DSO,
-                                               angles);
+    curad::device_measurement<float> sino_span(sinogram_ptr, {det_width, det_height, nangles});
+    sino_span.set_distance_source_to_detector(DSD).set_distance_source_to_object(DSO).set_angles(
+        angles);
 
     curad::fp::forward_3d(vol_span, sino_span);
 
