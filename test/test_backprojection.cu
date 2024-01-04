@@ -10,7 +10,7 @@
 
 #include "show.hpp"
 
-#include "curadon/backprojection.hpp"
+#include "curadon/backward.hpp"
 #include "curadon/bmp.hpp"
 
 TEST_CASE("test_backprojection") {
