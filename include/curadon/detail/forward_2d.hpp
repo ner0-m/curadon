@@ -1,6 +1,6 @@
 #pragma once
 
-#include "curadon/cuda/error.h"
+#include "curadon/detail/error.h"
 #include "curadon/math/vector.hpp"
 #include "curadon/rotation.h"
 #include "curadon/utils.hpp"

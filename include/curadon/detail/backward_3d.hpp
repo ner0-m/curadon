@@ -1,6 +1,6 @@
 #pragma once
 
-#include "curadon/cuda/error.h"
+#include "curadon/detail/error.h"
 #include "curadon/detail/texture.hpp"
 #include "curadon/device_span.hpp"
 #include "curadon/math/vector.hpp"
@@ -107,34 +107,43 @@ __global__ void kernel_backprojection_3d(device_span_3d<T> volume, Vec<float, 3>
 }
 
 namespace detail {
-void setup_constants(std::size_t start_proj, std::size_t num_projections, Vec<float, 3> vol_size,
-                     Vec<float, 3> vol_spacing, Vec<float, 3> vol_offset, span<float> angles) {
+template <class T, class U>
+void setup_constants(device_volume<T> vol, device_measurement<U> sino, std::uint64_t start_proj,
+                     std::uint64_t num_projections) {
+    const auto vol_extent = vol.extent();
+    const auto vol_spacing = vol.spacing();
+    const auto vol_offset = vol.offset();
+
     std::vector<curad::Vec<float, 3>> vol_origins;
     std::vector<curad::Vec<float, 3>> delta_xs;
     std::vector<curad::Vec<float, 3>> delta_ys;
     std::vector<curad::Vec<float, 3>> delta_zs;
 
-    for (int j = start_proj; j < start_proj + num_projections; ++j) {
-        float angle = angles[j] * M_PI / 180.f;
+    for (int i = start_proj; i < start_proj + num_projections; ++i) {
+        // TODO: check what am I still missing to make this feature complete? Check with tigre
 
-        curad::Vec<float, 3> init_vol_origin = -vol_size / 2.f + vol_spacing / 2.f + vol_offset;
-        auto vol_origin = curad::geometry::rotate_yzy(init_vol_origin, angle, 0.f, 0.f);
+        curad::Vec<float, 3> init_vol_origin = -vol_extent / 2.f + vol_spacing / 2.f + vol_offset;
+        auto vol_origin =
+            curad::geometry::rotate_yzy(init_vol_origin, sino.phi(i), sino.theta(i), sino.psi(i));
         vol_origins.push_back(vol_origin);
 
         curad::Vec<float, 3> init_delta;
         init_delta = init_vol_origin;
         init_delta[0] += vol_spacing[0];
-        init_delta = curad::geometry::rotate_yzy(init_delta, angle, 0.f, 0.f);
+        init_delta =
+            curad::geometry::rotate_yzy(init_delta, sino.phi(i), sino.theta(i), sino.psi(i));
         delta_xs.push_back(init_delta - vol_origin);
 
         init_delta = init_vol_origin;
         init_delta[1] += vol_spacing[1];
-        init_delta = curad::geometry::rotate_yzy(init_delta, angle, 0.f, 0.f);
+        init_delta =
+            curad::geometry::rotate_yzy(init_delta, sino.phi(i), sino.theta(i), sino.psi(i));
         delta_ys.push_back(init_delta - vol_origin);
 
         init_delta = init_vol_origin;
         init_delta[2] += vol_spacing[2];
-        init_delta = curad::geometry::rotate_yzy(init_delta, angle, 0.f, 0.f);
+        init_delta =
+            curad::geometry::rotate_yzy(init_delta, sino.phi(i), sino.theta(i), sino.psi(i));
         delta_zs.push_back(init_delta - vol_origin);
     }
 
@@ -187,8 +196,7 @@ void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
 
         // kernel uses variables stored in __constant__ memory, e.g. volume origin, volume
         // deltas Compute them here and upload them
-        detail::setup_constants(proj_idx, num_projections, volume.extent(), volume.spacing(),
-                                volume.offset(), sinogram.phi());
+        detail::setup_constants(volume, sinogram, proj_idx, num_projections);
 
         auto vol_span = volume.kernel_span();
 
@@ -209,7 +217,7 @@ void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
         int block_z = (vol_shape[2] + divz - 1) / divz;
         dim3 num_blocks(block_x, block_y, block_z);
         kernel_backprojection_3d<<<num_blocks, threads_per_block>>>(vol_span, source, DSD, DSO,
-                                                                 det_shape, i, nangles, tex);
+                                                                    det_shape, i, nangles, tex);
 
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());

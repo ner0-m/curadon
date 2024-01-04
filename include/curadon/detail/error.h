@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdio>
 #include <cuda_runtime_api.h>
 
 #define gpuErrchk(answer)                                                                          \

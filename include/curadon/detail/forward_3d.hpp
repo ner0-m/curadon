@@ -1,6 +1,6 @@
 #pragma once
 
-#include "curadon/cuda/error.h"
+#include "curadon/detail/error.h"
 #include "curadon/detail/texture.hpp"
 #include "curadon/device_span.hpp"
 #include "curadon/math/vector.hpp"
