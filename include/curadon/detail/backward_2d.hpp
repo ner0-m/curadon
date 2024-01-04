@@ -76,7 +76,7 @@ __global__ void backward_2d(T *volume, i64 vol_stride, vec2u vol_shape, cudaText
             // strictly positive
             auto u = (dir[0] * t + source[0]) + det_shape / 2;
 
-            auto sample = tex2D<f32>(tex, u, proj + 0.5f);
+            auto sample = tex1DLayered<f32>(tex, u, proj);
 
             local_volume[y] += sample;
         }
@@ -156,8 +156,10 @@ void backproject_2d(T *volume_ptr, vec2u vol_shape, vec2f vol_spacing, vec2f vol
     // allocate cuarray with size of volume
     cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<f32>();
     cudaArray_t array;
-    gpuErrchk(
-        cudaMallocArray(&array, &channelDesc, det_shape, kernel::num_projections_per_kernel_2d));
+
+    // IMPORTANT: height 0 required for 1Dlayered
+    auto extentDesc = make_cudaExtent(det_shape, 0, kernel::num_projections_per_kernel_2d);
+    gpuErrchk(cudaMalloc3DArray(&array, &channelDesc, extentDesc, cudaArrayLayered));
     gpuErrchk(cudaPeekAtLastError());
 
     // Create texture
@@ -176,7 +178,6 @@ void backproject_2d(T *volume_ptr, vec2u vol_shape, vec2f vol_spacing, vec2f vol
     texDescr.addressMode[1] = cudaAddressModeBorder;
     texDescr.readMode = cudaReadModeElementType;
 
-    // Texture tex(texRes, texDescr);
     Texture tex(texRes, texDescr);
 
     const int num_kernel_calls =
@@ -190,11 +191,16 @@ void backproject_2d(T *volume_ptr, vec2u vol_shape, vec2f vol_spacing, vec2f vol
 
         // Copy projection data necessary for the next kernel to cuda array
         const auto offset = proj_idx * det_shape;
-        auto cur_proj_ptr = sino_ptr + proj_idx * det_shape;
+        auto cur_proj_ptr = sino_ptr + offset;
         const auto size = det_shape * sizeof(U);
-        gpuErrchk(cudaMemcpy2DToArray(array, 0, 0, cur_proj_ptr, size, size, num_projections,
-                                      cudaMemcpyDefault));
-        // gpuErrchk(cudaStreamSynchronize(0));
+        cudaMemcpy3DParms mParams = {0};
+        mParams.srcPtr = make_cudaPitchedPtr(cur_proj_ptr, det_shape * sizeof(U), det_shape, 1);
+        mParams.kind = cudaMemcpyHostToDevice;
+
+        // Important! non-zero height required for memcpy to do anything
+        mParams.extent = make_cudaExtent(det_shape, 1, kernel::num_projections_per_kernel_2d);
+        mParams.dstArray = array;
+        gpuErrchk(cudaMemcpy3D(&mParams));
         gpuErrchk(cudaPeekAtLastError());
 
         // kernel uses variables stored in __constant__ memory, e.g. volume origin, volume
