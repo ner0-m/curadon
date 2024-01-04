@@ -10,8 +10,9 @@
 #include <cstdint>
 #include <cuda_runtime_api.h>
 
-namespace curad {
+namespace curad::bp {
 
+namespace kernel {
 static constexpr i64 num_projects_per_kernel = 32;
 
 static constexpr i64 num_voxels_per_thread = 8;
@@ -105,7 +106,6 @@ __global__ void kernel_backprojection_3d(device_span_3d<T> volume, vec3f source,
     }
 }
 
-namespace detail {
 template <class T, class U>
 void setup_constants(device_volume<T> vol, device_measurement<U> sino, u64 start_proj,
                      u64 num_projections) {
@@ -146,18 +146,18 @@ void setup_constants(device_volume<T> vol, device_measurement<U> sino, u64 start
         delta_zs.push_back(init_delta - vol_origin);
     }
 
-    cudaMemcpyToSymbol(curad::dev_vol_origin, vol_origins.data(),
-                       sizeof(curad::vec3f) * curad::num_projects_per_kernel, 0, cudaMemcpyDefault);
-    cudaMemcpyToSymbol(curad::dev_delta_x, delta_xs.data(),
-                       sizeof(curad::vec3f) * curad::num_projects_per_kernel, 0, cudaMemcpyDefault);
-    cudaMemcpyToSymbol(curad::dev_delta_y, delta_ys.data(),
-                       sizeof(curad::vec3f) * curad::num_projects_per_kernel, 0, cudaMemcpyDefault);
-    cudaMemcpyToSymbol(curad::dev_delta_z, delta_zs.data(),
-                       sizeof(curad::vec3f) * curad::num_projects_per_kernel, 0, cudaMemcpyDefault);
+    cudaMemcpyToSymbol(dev_vol_origin, vol_origins.data(),
+                       sizeof(curad::vec3f) * num_projects_per_kernel, 0, cudaMemcpyDefault);
+    cudaMemcpyToSymbol(dev_delta_x, delta_xs.data(), sizeof(curad::vec3f) * num_projects_per_kernel,
+                       0, cudaMemcpyDefault);
+    cudaMemcpyToSymbol(dev_delta_y, delta_ys.data(), sizeof(curad::vec3f) * num_projects_per_kernel,
+                       0, cudaMemcpyDefault);
+    cudaMemcpyToSymbol(dev_delta_z, delta_zs.data(), sizeof(curad::vec3f) * num_projects_per_kernel,
+                       0, cudaMemcpyDefault);
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
 }
-} // namespace detail
+} // namespace kernel
 
 template <class T, class U>
 void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
@@ -166,7 +166,8 @@ void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
     const auto sino_height = sinogram.shape()[1];
 
     // allocate cuda array for sinogram
-    auto array_cu = detail::allocate_cuarray(sino_width, sino_height, num_projects_per_kernel);
+    auto array_cu =
+        detail::allocate_cuarray(sino_width, sino_height, kernel::num_projects_per_kernel);
 
     cudaTextureObject_t tex;
 
@@ -174,16 +175,16 @@ void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
     detail::bind_texture_to_array(&tex, array_cu);
 
     auto num_kernel_calls =
-        (nangles + curad::num_projects_per_kernel - 1) / curad::num_projects_per_kernel;
+        (nangles + kernel::num_projects_per_kernel - 1) / kernel::num_projects_per_kernel;
     for (int i = 0; i < num_kernel_calls; ++i) {
-        auto proj_idx = i * curad::num_projects_per_kernel;
+        auto proj_idx = i * kernel::num_projects_per_kernel;
 
-        auto projections_left = nangles - (i * curad::num_projects_per_kernel);
+        auto projections_left = nangles - (i * kernel::num_projects_per_kernel);
 
         // On how many projections do we work on this call? either num_projects_per_kernel, or
         // what ever is left
         const auto num_projections =
-            std::min<int>(curad::num_projects_per_kernel, projections_left);
+            std::min<int>(kernel::num_projects_per_kernel, projections_left);
 
         // Copy projection data necessary for the next kernel to cuda array
         const auto sub_sino = sinogram.slice(proj_idx, num_projections);
@@ -191,7 +192,7 @@ void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
 
         // kernel uses variables stored in __constant__ memory, e.g. volume origin, volume
         // deltas Compute them here and upload them
-        detail::setup_constants(volume, sinogram, proj_idx, num_projections);
+        kernel::setup_constants(volume, sinogram, proj_idx, num_projections);
 
         auto vol_span = volume.kernel_span();
 
@@ -202,7 +203,7 @@ void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
 
         int divx = 16;
         int divy = 32;
-        int divz = curad::num_voxels_per_thread;
+        int divz = kernel::num_voxels_per_thread;
 
         dim3 threads_per_block(divx, divy, 1);
 
@@ -211,8 +212,8 @@ void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
         int block_y = (vol_shape[1] + divy - 1) / divy;
         int block_z = (vol_shape[2] + divz - 1) / divz;
         dim3 num_blocks(block_x, block_y, block_z);
-        kernel_backprojection_3d<<<num_blocks, threads_per_block>>>(vol_span, source, DSD, DSO,
-                                                                    det_shape, i, nangles, tex);
+        kernel::kernel_backprojection_3d<<<num_blocks, threads_per_block>>>(
+            vol_span, source, DSD, DSO, det_shape, i, nangles, tex);
 
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
@@ -221,4 +222,4 @@ void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
     cudaDestroyTextureObject(tex);
 }
 
-} // namespace curad
+} // namespace curad::bp
