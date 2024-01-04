@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include "curadon/math/vector.hpp"
 #include "curadon/span.hpp"
 
 namespace curad {
@@ -11,8 +12,8 @@ template <class T>
 class device_span {
   public:
     using value_type = T;
-    using size_type = std::uint64_t;
-    using difference_type = std::int64_t;
+    using size_type = u64;
+    using difference_type = i64;
     using pointer = T *;
     using const_pointer = T const *;
     using reference = T &;
@@ -24,7 +25,7 @@ class device_span {
 
     __host__ __device__ size_type size() const { return size_; }
 
-    __host__ __device__ std::uint64_t nbytes() const { return sizeof(T) * size_; }
+    __host__ __device__ u64 nbytes() const { return sizeof(T) * size_; }
 
     __host__ __device__ pointer data() { return data_; }
 
@@ -49,9 +50,9 @@ template <class T>
 class device_span_3d {
   public:
     using value_type = T;
-    using size_type = std::uint64_t;
-    using strides_type = std::int64_t;
-    using difference_type = std::int64_t;
+    using size_type = u64;
+    using strides_type = i64;
+    using difference_type = i64;
     using pointer = T *;
     using const_pointer = T const *;
     using reference = T &;
@@ -65,7 +66,7 @@ class device_span_3d {
 
         // By default assume row-major
         strides_type running_size = 1;
-        for (std::uint64_t i = 0; i < Dim; ++i) {
+        for (u64 i = 0; i < Dim; ++i) {
             strides_[i] = running_size;
             running_size = strides_[i] * static_cast<strides_type>(shape_[i]);
         }
@@ -107,47 +108,46 @@ class device_volume {
   public:
     static constexpr int Dim = 3;
 
-    device_volume(T *data, vec<std::uint64_t, Dim> shape)
-        : device_volume<T>(data, shape, vec<float, Dim>::ones()) {}
+    device_volume(T *data, vec<u64, Dim> shape)
+        : device_volume<T>(data, shape, vec<f32, Dim>::ones()) {}
 
-    device_volume(T *data, vec<std::uint64_t, Dim> shape, vec<float, Dim> spacing)
-        : device_volume<T>(data, shape, vec<float, Dim>::ones(), vec<float, Dim>::zeros()) {}
+    device_volume(T *data, vec<u64, Dim> shape, vec<f32, Dim> spacing)
+        : device_volume<T>(data, shape, vec<f32, Dim>::ones(), vec<f32, Dim>::zeros()) {}
 
-    device_volume(T *data, vec<std::uint64_t, Dim> shape, vec<float, Dim> spacing,
-                  vec<float, Dim> offset)
+    device_volume(T *data, vec<u64, Dim> shape, vec<f32, Dim> spacing, vec<f32, Dim> offset)
         : data_(data, shape)
         , spacing_(spacing)
         , extent_(shape * spacing_)
         , offset_(offset) {}
 
-    std::uint64_t ndim() const { return data_.ndim(); }
+    u64 ndim() const { return data_.ndim(); }
 
-    std::uint64_t size() const { return data_.size(); }
+    u64 size() const { return data_.size(); }
 
-    std::uint64_t nbytes() const { return data_.nbytes(); }
+    u64 nbytes() const { return data_.nbytes(); }
 
     T *device_data() { return data_.device_data(); }
 
     T const *device_data() const { return data_.device_data; }
 
-    vec<std::uint64_t, Dim> shape() const { return data_.shape(); }
+    vec<u64, Dim> shape() const { return data_.shape(); }
 
-    vec<float, Dim> spacing() const { return spacing_; }
+    vec<f32, Dim> spacing() const { return spacing_; }
 
-    vec<float, Dim> extent() const { return extent_; }
+    vec<f32, Dim> extent() const { return extent_; }
 
-    vec<float, Dim> offset() const { return offset_; }
+    vec<f32, Dim> offset() const { return offset_; }
 
     device_span_3d<T> kernel_span() { return data_; }
 
   private:
     device_span_3d<T> data_;
 
-    vec<float, Dim> spacing_;
+    vec<f32, Dim> spacing_;
 
-    vec<float, Dim> extent_;
+    vec<f32, Dim> extent_;
 
-    vec<float, Dim> offset_;
+    vec<f32, Dim> offset_;
 };
 
 template <class T>
@@ -156,15 +156,15 @@ class device_measurement {
     static constexpr int Dim = 3;
     static constexpr int DetectorDim = 2;
 
-    device_measurement(T *data, vec<std::uint64_t, Dim> shape)
-        : device_measurement(data, shape, vec<float, DetectorDim>::ones()) {}
+    device_measurement(T *data, vec<u64, Dim> shape)
+        : device_measurement(data, shape, vec<f32, DetectorDim>::ones()) {}
 
-    device_measurement(T *data, vec<std::uint64_t, Dim> shape, vec<float, DetectorDim> spacing)
-        : device_measurement(data, shape, vec<float, DetectorDim>::ones(),
-                             vec<float, DetectorDim>::zeros()) {}
+    device_measurement(T *data, vec<u64, Dim> shape, vec<f32, DetectorDim> spacing)
+        : device_measurement(data, shape, vec<f32, DetectorDim>::ones(),
+                             vec<f32, DetectorDim>::zeros()) {}
 
-    device_measurement(T *data, vec<std::uint64_t, Dim> shape, vec<float, DetectorDim> spacing,
-                       vec<float, DetectorDim> offset)
+    device_measurement(T *data, vec<u64, Dim> shape, vec<f32, DetectorDim> spacing,
+                       vec<f32, DetectorDim> offset)
         : data_(data, shape)
         , spacing_(spacing)
         , offset_(offset)
@@ -180,19 +180,16 @@ class device_measurement {
         , roll_(0)
         , yaw_(0) {}
 
-    device_measurement(T *data, vec<std::uint64_t, DetectorDim> shape, float DSD, float DSO,
-                       std::vector<float> phi)
-        : device_measurement(data, shape, vec<float, DetectorDim>::ones(), DSD, DSO, phi) {}
+    device_measurement(T *data, vec<u64, DetectorDim> shape, f32 DSD, f32 DSO, std::vector<f32> phi)
+        : device_measurement(data, shape, vec<f32, DetectorDim>::ones(), DSD, DSO, phi) {}
 
-    device_measurement(T *data, vec<std::uint64_t, DetectorDim> shape,
-                       vec<float, DetectorDim> spacing, float DSD, float DSO,
-                       std::vector<float> phi)
-        : device_measurement(data, shape, vec<float, DetectorDim>::ones(),
-                             vec<float, DetectorDim>::zeros(), DSD, DSO, phi) {}
+    device_measurement(T *data, vec<u64, DetectorDim> shape, vec<f32, DetectorDim> spacing, f32 DSD,
+                       f32 DSO, std::vector<f32> phi)
+        : device_measurement(data, shape, vec<f32, DetectorDim>::ones(),
+                             vec<f32, DetectorDim>::zeros(), DSD, DSO, phi) {}
 
-    device_measurement(T *data, vec<std::uint64_t, DetectorDim> shape,
-                       vec<float, DetectorDim> spacing, vec<float, DetectorDim> offset, float DSD,
-                       float DSO, std::vector<float> phi)
+    device_measurement(T *data, vec<u64, DetectorDim> shape, vec<f32, DetectorDim> spacing,
+                       vec<f32, DetectorDim> offset, f32 DSD, f32 DSO, std::vector<f32> phi)
         : data_(data, {shape.x(), shape.y(), phi.size()})
         , spacing_(spacing)
         , offset_(offset)
@@ -208,104 +205,102 @@ class device_measurement {
         , roll_(0)
         , yaw_(0) {}
 
-    std::uint64_t size() const { return data_.size(); }
+    u64 size() const { return data_.size(); }
 
-    std::uint64_t nbytes() const { return data_.nbytes(); }
+    u64 nbytes() const { return data_.nbytes(); }
 
     T *device_data() { return data_.device_data(); }
 
     T const *device_data() const { return data_.device_data(); }
 
-    vec<std::uint64_t, Dim> shape() const { return data_.shape(); }
+    vec<u64, Dim> shape() const { return data_.shape(); }
 
-    vec<std::uint64_t, DetectorDim> detector_shape() const {
-        return {data_.shape()[0], data_.shape()[1]};
-    }
+    vec<u64, DetectorDim> detector_shape() const { return {data_.shape()[0], data_.shape()[1]}; }
 
-    vec<float, DetectorDim> spacing() const { return spacing_; }
+    vec<f32, DetectorDim> spacing() const { return spacing_; }
 
-    vec<float, DetectorDim> extent() const { return extent_; }
+    vec<f32, DetectorDim> extent() const { return extent_; }
 
-    vec<float, DetectorDim> offset() const { return offset_; }
+    vec<f32, DetectorDim> offset() const { return offset_; }
 
     device_span_3d<T> kernel_span() { return data_; }
 
-    std::uint64_t nangles() const { return nangles_; }
+    u64 nangles() const { return nangles_; }
 
-    float distance_source_to_detector() const { return DSD; }
+    f32 distance_source_to_detector() const { return DSD; }
 
-    float distance_source_to_object() const { return DSO; }
+    f32 distance_source_to_object() const { return DSO; }
 
-    float distance_object_to_detector() const { return DSD - DSO; }
+    f32 distance_object_to_detector() const { return DSD - DSO; }
 
-    float center_of_rotation_correction() const { return COR; }
+    f32 center_of_rotation_correction() const { return COR; }
 
-    span<float> angles() { return span<float>(phi_.data(), phi_.size()); }
+    span<f32> angles() { return span<f32>(phi_.data(), phi_.size()); }
 
-    span<float> phi() { return span<float>(phi_.data(), phi_.size()); }
+    span<f32> phi() { return span<f32>(phi_.data(), phi_.size()); }
 
-    float phi(std::uint64_t idx) { return phi_[idx]; }
+    f32 phi(u64 idx) { return phi_[idx]; }
 
-    span<float> theta() { return span<float>(theta_.data(), theta_.size()); }
+    span<f32> theta() { return span<f32>(theta_.data(), theta_.size()); }
 
-    float theta(std::uint64_t idx) { return theta_[idx]; }
+    f32 theta(u64 idx) { return theta_[idx]; }
 
-    span<float> psi() { return span<float>(psi_.data(), psi_.size()); }
+    span<f32> psi() { return span<f32>(psi_.data(), psi_.size()); }
 
-    float psi(std::uint64_t idx) { return psi_[idx]; }
+    f32 psi(u64 idx) { return psi_[idx]; }
 
-    float pitch() const { return pitch_; }
+    f32 pitch() const { return pitch_; }
 
-    float roll() const { return roll_; }
+    f32 roll() const { return roll_; }
 
-    float yaw() const { return yaw_; }
+    f32 yaw() const { return yaw_; }
 
-    vec<float, Dim> source() const { return {0, 0, -distance_source_to_object()}; }
+    vec<f32, Dim> source() const { return {0, 0, -distance_source_to_object()}; }
 
-    device_span_3d<T> slice(std::uint64_t offset, std::uint64_t count = 1) {
-        vec<std::uint64_t, Dim> new_shape{shape()[0], shape()[1], count};
+    device_span_3d<T> slice(u64 offset, u64 count = 1) {
+        vec<u64, Dim> new_shape{shape()[0], shape()[1], count};
         auto ptr = device_data() + offset * data_.strides()[2];
         return device_span_3d<T>(ptr, new_shape);
     }
 
     // Builder pattern to set many variables:
-    device_measurement<T> &set_spacing(vec<float, DetectorDim> new_spacing) {
+    device_measurement<T> &set_spacing(vec<f32, DetectorDim> new_spacing) {
         spacing_ = new_spacing;
         return *this;
     }
 
-    device_measurement<T> &set_extent(vec<float, DetectorDim> new_extent) {
+    device_measurement<T> &set_extent(vec<f32, DetectorDim> new_extent) {
         extent_ = new_extent;
         return *this;
     }
 
-    device_measurement<T> &set_offset(vec<float, DetectorDim> new_offset) {
+    device_measurement<T> &set_offset(vec<f32, DetectorDim> new_offset) {
         offset_ = new_offset;
         return *this;
     }
 
-    device_measurement<T> &set_distance_source_to_detector(float new_DSD) {
+    device_measurement<T> &set_distance_source_to_detector(f32 new_DSD) {
         DSD = new_DSD;
         return *this;
     }
 
-    device_measurement<T> &set_distance_source_to_object(float new_DSO) {
+    device_measurement<T> &set_distance_source_to_object(f32 new_DSO) {
         DSO = new_DSO;
         return *this;
     }
 
-    device_measurement<T> &set_center_of_rotation_correction(float new_COR) {
+    device_measurement<T> &set_center_of_rotation_correction(f32 new_COR) {
         COR = new_COR;
         return *this;
     }
 
-    device_measurement<T> &set_angles(std::vector<float> new_angles) {
-        std::vector<float> zeros(new_angles.size(), 0);
+    device_measurement<T> &set_angles(std::vector<f32> new_angles) {
+        std::vector<f32> zeros(new_angles.size(), 0);
         return set_angles(new_angles, zeros, zeros);
     }
 
-    device_measurement<T> &set_angles(std::vector<float> new_phi, std::vector<float> new_theta,
-                                      std::vector<float> new_psi) {
+    device_measurement<T> &set_angles(std::vector<f32> new_phi, std::vector<f32> new_theta,
+                                      std::vector<f32> new_psi) {
         // TODO: check that all have the same size!
         phi_ = new_phi;
         theta_ = new_theta;
@@ -314,17 +309,17 @@ class device_measurement {
         return *this;
     }
 
-    device_measurement<T> &set_pitch(float new_pitch) {
+    device_measurement<T> &set_pitch(f32 new_pitch) {
         pitch_ = new_pitch;
         return *this;
     }
 
-    device_measurement<T> &set_roll(float new_roll) {
+    device_measurement<T> &set_roll(f32 new_roll) {
         roll_ = new_roll;
         return *this;
     }
 
-    device_measurement<T> &set_yaw(float new_yaw) {
+    device_measurement<T> &set_yaw(f32 new_yaw) {
         yaw_ = new_yaw;
         return *this;
     }
@@ -332,34 +327,34 @@ class device_measurement {
   private:
     device_span_3d<T> data_;
 
-    vec<float, DetectorDim> spacing_;
+    vec<f32, DetectorDim> spacing_;
 
-    vec<float, DetectorDim> extent_;
+    vec<f32, DetectorDim> extent_;
 
-    vec<float, DetectorDim> offset_;
+    vec<f32, DetectorDim> offset_;
 
     // Geometry information about measurements
-    std::uint64_t nangles_;
+    u64 nangles_;
 
     /// Distance source to detector
-    float DSD;
+    f32 DSD;
 
     /// Distance source to object / center of rotation
-    float DSO;
+    f32 DSO;
 
     // euler angles in radian, TODO: change to device_uvector? But we only need it in the
     // pre-computing phase, so let's think about this a little more
-    std::vector<float> phi_;
-    std::vector<float> theta_;
-    std::vector<float> psi_;
+    std::vector<f32> phi_;
+    std::vector<f32> theta_;
+    std::vector<f32> psi_;
 
     // Detector rotation in radians, TODO: maybe make this a vector?
-    float pitch_;
-    float roll_;
-    float yaw_;
+    f32 pitch_;
+    f32 roll_;
+    f32 yaw_;
 
     /// Center of rotation correction (TODO: actually use it)
-    float COR = 0;
+    f32 COR = 0;
 };
 
 } // namespace curad

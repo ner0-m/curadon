@@ -19,36 +19,28 @@
 namespace curad::fp {
 namespace kernel {
 
-static constexpr std::uint64_t pixels_u_per_block_2d = 8;
-static constexpr std::uint64_t num_projections_per_block_2d = 1;
-static constexpr std::uint64_t num_projections_per_kernel_2d = 1;
+static constexpr u64 pixels_u_per_block_2d = 8;
+static constexpr u64 num_projections_per_block_2d = 1;
+static constexpr u64 num_projections_per_kernel_2d = 1;
 
 /// tex is the volume
 template <class T>
-__global__ void
-kernel_forward_2d(T *sinogram, vec<std::uint64_t, 2> vol_shape, float DSD, float DSO,
-                  std::uint64_t det_shape, std::int64_t total_projections, cudaTextureObject_t tex,
-                  float accuracy,
-                  // These should be moved to constant memory
-                  vec<float, 2> *uv_origins, vec<float, 2> *delta_us, vec<float, 2> *sources) {
+__global__ void kernel_forward_2d(T *sinogram, vec<u64, 2> vol_shape, f32 DSD, f32 DSO,
+                                  u64 det_shape, i64 total_projections, cudaTextureObject_t tex,
+                                  f32 accuracy,
+                                  // These should be moved to constant memory
+                                  vec2f *uv_origins, vec2f *delta_us, vec2f *sources) {
     const auto idx_u = threadIdx.x + blockIdx.x * blockDim.x;
 
     // TODO: make this less strict, enable this kernel to be called multiple times
     const auto proj_number = threadIdx.y + blockIdx.y * blockDim.y;
 
-    // if (idx_u == 0) {
-    //     printf("idx_u: %d, proj_number: %d\n", idx_u, proj_number);
-    // }
-
     if (idx_u >= det_shape || proj_number >= total_projections)
         return;
 
-    const auto print_proj = 0;
-    const bool do_print = idx_u == 0 || idx_u == det_shape - 1;
-
-    const std::int64_t stride_u = 1;
-    const std::int64_t stride_proj = det_shape;
-    const std::int64_t idx = idx_u * stride_u + proj_number * stride_proj;
+    const i64 stride_u = 1;
+    const i64 stride_proj = det_shape;
+    const i64 idx = idx_u * stride_u + proj_number * stride_proj;
 
     const auto uv_origin = uv_origins[proj_number];
     const auto delta_u = delta_us[proj_number];
@@ -56,33 +48,23 @@ kernel_forward_2d(T *sinogram, vec<std::uint64_t, 2> vol_shape, float DSD, float
 
     // The detector point this thread is working on
     // const auto det_point = uv_origin + idx_u * delta_u + idx_v * delta_v;
-    vec<float, 2> det_point;
+    vec2f det_point;
     det_point.x() = uv_origin.x() + idx_u * delta_u.x();
     det_point.y() = uv_origin.y() + idx_u * delta_u.y();
 
     // direction from source to detector point
     auto dir = det_point - source;
 
-
     // how many steps to take along dir should we walk
     // TODO: This walks from the source to the  detector all the way, this is hyper inefficient,
     // clean this up (i.e. interect with AABB of volume)
     auto dir_len = norm(dir);
-    const auto nsamples = static_cast<std::int64_t>(::ceil(__fdividef(dir_len, accuracy)));
+    const auto nsamples = static_cast<i64>(::ceil(__fdividef(dir_len, accuracy)));
 
     dir /= dir_len;
 
-    if (do_print) {
-        // printf("dir: %f %f\n", dir.x(), dir.y());
-        // printf("source: %f %f\n", source.x(), source.y());
-        // printf("det_point: %f %f\n", det_point.x(), det_point.y());
-        printf("proj_number: %d, idx_u: %d, dir: %f %f, source: %f %f, det_point: %f %f\n",
-               proj_number, idx_u, dir.x(), dir.y(), source.x(), source.y(), det_point.x(),
-               det_point.y());
-    }
-
-    const vec<float, 2> boxmin{-1, -1};
-    const vec<float, 2> boxmax{vol_shape[0] + 1, vol_shape[1] + 1};
+    const vec2f boxmin{-1, -1};
+    const vec2f boxmax{vol_shape[0] + 1, vol_shape[1] + 1};
     auto [hit, tmin, tmax] = intersection(boxmin, boxmax, source, dir);
 
     if (!hit) {
@@ -92,33 +74,16 @@ kernel_forward_2d(T *sinogram, vec<std::uint64_t, 2> vol_shape, float DSD, float
     // tmin and tmax are both within [0, 1], hence, we compute how many of the nsamples are within
     // this region and only walk that many samples
     const auto nsteps = static_cast<int>(ceilf((tmax - tmin) / dir_len * nsamples));
-    const auto step_length = (tmax - tmin) / (float)nsteps;
+    const auto step_length = (tmax - tmin) / (f32)nsteps;
 
-    if (do_print) {
-        printf("proj_number: %d, idx_u: %d, nsteps: %d, tmin: %f, tmax: %f, step_length: %f, "
-               "dir_len %f\n",
-               proj_number, idx_u, nsteps, tmin, tmax, step_length, dir_len);
-    }
-
-    vec<float, 2> p;
-    float accumulator = 0;
+    vec2f p;
+    f32 accumulator = 0;
 
     auto step = 0;
-    for (float t = tmin; t <= tmax; t += step_length) {
+    for (f32 t = tmin; t <= tmax; t += step_length) {
         p = dir * t + source;
-        const auto partial = tex2D<float>(tex, p.x(), p.y());
+        const auto partial = tex2D<f32>(tex, p.x(), p.y());
         accumulator += partial;
-        // if (partial > 0.000 && do_print) {
-        //     printf("step: %d, proj_number: %d, idx_u: %d, t: %f, partial: %f, p: %f %f\n", step, proj_number, idx_u,
-        //            t, partial, p.x(), p.y());
-        // }
-        // ++step;
-        // __syncthreads();
-    }
-
-    if (do_print) {
-        printf("proj_number: %d, idx_u: %d, accumulator: %f, delta_length: %f\n", proj_number,
-               idx_u, accumulator, dir_len);
     }
 
     // TODO: dir_len * vol_spacing
@@ -127,26 +92,25 @@ kernel_forward_2d(T *sinogram, vec<std::uint64_t, 2> vol_shape, float DSD, float
 } // namespace kernel
 
 template <class T, class U>
-void forward_2d(T *volume, vec<std::uint64_t, 2> vol_shape, vec<float, 2> vol_size,
-                vec<float, 2> vol_spacing, vec<float, 2> vol_offset, U *sinogram,
-                std::uint64_t det_shape, float det_spacing, std::vector<float> angles, float DSD,
-                float DSO) {
+void forward_2d(T *volume, vec<u64, 2> vol_shape, vec2f vol_size, vec2f vol_spacing,
+                vec2f vol_offset, U *sinogram, u64 det_shape, f32 det_spacing,
+                std::vector<f32> angles, f32 DSD, f32 DSO) {
 
     std::size_t nangles = angles.size();
 
     // TODO: make this configurable
-    const float accuracy = 1.f;
+    const f32 accuracy = 1.f;
 
     // TODO: bind volume to texture
     cudaTextureObject_t tex;
 
     // allocate cuarray with size of volume
-    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
+    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<f32>();
     cudaArray_t array;
     gpuErrchk(cudaMallocArray(&array, &channelDesc, vol_shape[0], vol_shape[1]));
     gpuErrchk(cudaPeekAtLastError());
 
-    const auto size = vol_shape[0] * vol_shape[1] * sizeof(float);
+    const auto size = vol_shape[0] * vol_shape[1] * sizeof(f32);
     gpuErrchk(cudaMemcpyToArray(array, 0, 0, volume, size, cudaMemcpyDefault));
     gpuErrchk(cudaStreamSynchronize(0));
     gpuErrchk(cudaPeekAtLastError());
@@ -180,22 +144,21 @@ void forward_2d(T *volume, vec<std::uint64_t, 2> vol_shape, vec<float, 2> vol_si
             std::min<int>(kernel::num_projections_per_kernel_2d, num_projections_left);
 
         // TODO: compute uv origins, delta_u, delta_v, sources
-        thrust::host_vector<vec<float, 2>> host_uv_origins(num_projections);
-        thrust::host_vector<vec<float, 2>> host_deltas_us(num_projections);
-        thrust::host_vector<vec<float, 2>> host_sources(num_projections);
+        thrust::host_vector<vec2f> host_uv_origins(num_projections);
+        thrust::host_vector<vec2f> host_deltas_us(num_projections);
+        thrust::host_vector<vec2f> host_sources(num_projections);
 
         // distance object to detector
         const auto DOD = DSD - DSO;
         for (int i = 0; i < num_projections; ++i) {
             auto angle = angles[proj_idx + i];
-            vec<float, 2> init_source({0, -DSO});
+            vec2f init_source({0, -DSO});
 
             // Assume detector origin is at the bottom left corner, i.e. detector point (0, 0)
-            vec<float, 2> init_det_origin{-det_spacing * (det_shape / 2.f) + det_spacing * 0.5f,
-                                          0.f};
+            vec2f init_det_origin{-det_spacing * (det_shape / 2.f) + det_spacing * 0.5f, 0.f};
 
             // detector point (1)
-            vec<float, 2> init_delta_u = init_det_origin + vec<float, 2>{det_spacing, 0.f};
+            vec2f init_delta_u = init_det_origin + vec2f{det_spacing, 0.f};
 
             // Apply geometry transformation, such that volume origin coincidence with world origin,
             // the volume voxels are unit size, for all projections, the image stays the same
@@ -233,15 +196,15 @@ void forward_2d(T *volume, vec<std::uint64_t, 2> vol_shape, vec<float, 2> vol_si
         }
 
         // upload uv_origin, delta_u, delta_v, sources
-        thrust::device_vector<vec<float, 2>> dev_uv_origins = host_uv_origins;
-        thrust::device_vector<vec<float, 2>> dev_deltas_us = host_deltas_us;
-        thrust::device_vector<vec<float, 2>> dev_sources = host_sources;
+        thrust::device_vector<vec2f> dev_uv_origins = host_uv_origins;
+        thrust::device_vector<vec2f> dev_deltas_us = host_deltas_us;
+        thrust::device_vector<vec2f> dev_sources = host_sources;
 
         auto uv_origins = thrust::raw_pointer_cast(dev_uv_origins.data());
         auto deltas_us = thrust::raw_pointer_cast(dev_deltas_us.data());
         auto sources = thrust::raw_pointer_cast(dev_sources.data());
 
-        const std::uint64_t div_u = kernel::pixels_u_per_block_2d;
+        const u64 div_u = kernel::pixels_u_per_block_2d;
 
         dim3 grid(utils::round_up_division(det_shape, div_u),
                   utils::round_up_division(num_projections, kernel::num_projections_per_block_2d));

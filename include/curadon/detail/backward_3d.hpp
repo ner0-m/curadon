@@ -12,22 +12,21 @@
 
 namespace curad {
 
-static constexpr std::int64_t num_projects_per_kernel = 32;
+static constexpr i64 num_projects_per_kernel = 32;
 
-static constexpr std::int64_t num_voxels_per_thread = 8;
+static constexpr i64 num_voxels_per_thread = 8;
 
-__constant__ vec<float, 3> dev_vol_origin[num_projects_per_kernel];
-__constant__ vec<float, 3> dev_delta_x[num_projects_per_kernel];
-__constant__ vec<float, 3> dev_delta_y[num_projects_per_kernel];
-__constant__ vec<float, 3> dev_delta_z[num_projects_per_kernel];
+__constant__ vec3f dev_vol_origin[num_projects_per_kernel];
+__constant__ vec3f dev_delta_x[num_projects_per_kernel];
+__constant__ vec3f dev_delta_y[num_projects_per_kernel];
+__constant__ vec3f dev_delta_z[num_projects_per_kernel];
 
 // TODO: have constant memory array for sources!
 
 template <class T>
-__global__ void kernel_backprojection_3d(device_span_3d<T> volume, vec<float, 3> source, float DSD,
-                                         float DSO, vec<std::uint64_t, 2> det_shape,
-                                         std::int64_t cur_projection,
-                                         std::int64_t total_projections, cudaTextureObject_t tex) {
+__global__ void kernel_backprojection_3d(device_span_3d<T> volume, vec3f source, f32 DSD, f32 DSO,
+                                         vec2u det_shape, i64 cur_projection, i64 total_projections,
+                                         cudaTextureObject_t tex) {
     auto idx_x = blockIdx.x * blockDim.x + threadIdx.x;
     auto idx_y = blockIdx.y * blockDim.y + threadIdx.y;
     auto start_idx_z = blockIdx.z * num_voxels_per_thread + threadIdx.z;
@@ -38,7 +37,7 @@ __global__ void kernel_backprojection_3d(device_span_3d<T> volume, vec<float, 3>
 
     // Each thread has an array of volume voxels, that we first read, then
     // work on, and then write back once
-    float local_volume[num_voxels_per_thread];
+    f32 local_volume[num_voxels_per_thread];
 
     // First step, load all values into the local_volume array
 #pragma unroll
@@ -83,12 +82,12 @@ __global__ void kernel_backprojection_3d(device_span_3d<T> volume, vec<float, 3>
             // Compute intersection of detector with dir
             auto t = __fdividef(DSO - DSD - source[2], dir[2]);
 
-            // Coordinates are from [-det_shape / 2, det_shape / 2], hence shift it to be strictly
-            // positive
+            // Coordinates are from [-det_shape / 2, det_shape / 2], hence shift it to be
+            // strictly positive
             auto u = (dir[0] * t + source[0]) + det_shape[0] / 2;
             auto v = (dir[1] * t + source[1]) + det_shape[1] / 2;
 
-            auto sample = tex3D<float>(tex, u, v, proj + 0.5f);
+            auto sample = tex3D<f32>(tex, u, v, proj + 0.5f);
 
             local_volume[z] += sample;
         }
@@ -108,26 +107,26 @@ __global__ void kernel_backprojection_3d(device_span_3d<T> volume, vec<float, 3>
 
 namespace detail {
 template <class T, class U>
-void setup_constants(device_volume<T> vol, device_measurement<U> sino, std::uint64_t start_proj,
-                     std::uint64_t num_projections) {
+void setup_constants(device_volume<T> vol, device_measurement<U> sino, u64 start_proj,
+                     u64 num_projections) {
     const auto vol_extent = vol.extent();
     const auto vol_spacing = vol.spacing();
     const auto vol_offset = vol.offset();
 
-    std::vector<curad::vec<float, 3>> vol_origins;
-    std::vector<curad::vec<float, 3>> delta_xs;
-    std::vector<curad::vec<float, 3>> delta_ys;
-    std::vector<curad::vec<float, 3>> delta_zs;
+    std::vector<curad::vec3f> vol_origins;
+    std::vector<curad::vec3f> delta_xs;
+    std::vector<curad::vec3f> delta_ys;
+    std::vector<curad::vec3f> delta_zs;
 
     for (int i = start_proj; i < start_proj + num_projections; ++i) {
         // TODO: check what am I still missing to make this feature complete? Check with tigre
 
-        curad::vec<float, 3> init_vol_origin = -vol_extent / 2.f + vol_spacing / 2.f + vol_offset;
+        curad::vec3f init_vol_origin = -vol_extent / 2.f + vol_spacing / 2.f + vol_offset;
         auto vol_origin =
             curad::geometry::rotate_yzy(init_vol_origin, sino.phi(i), sino.theta(i), sino.psi(i));
         vol_origins.push_back(vol_origin);
 
-        curad::vec<float, 3> init_delta;
+        curad::vec3f init_delta;
         init_delta = init_vol_origin;
         init_delta[0] += vol_spacing[0];
         init_delta =
@@ -148,17 +147,13 @@ void setup_constants(device_volume<T> vol, device_measurement<U> sino, std::uint
     }
 
     cudaMemcpyToSymbol(curad::dev_vol_origin, vol_origins.data(),
-                       sizeof(curad::vec<float, 3>) * curad::num_projects_per_kernel, 0,
-                       cudaMemcpyDefault);
+                       sizeof(curad::vec3f) * curad::num_projects_per_kernel, 0, cudaMemcpyDefault);
     cudaMemcpyToSymbol(curad::dev_delta_x, delta_xs.data(),
-                       sizeof(curad::vec<float, 3>) * curad::num_projects_per_kernel, 0,
-                       cudaMemcpyDefault);
+                       sizeof(curad::vec3f) * curad::num_projects_per_kernel, 0, cudaMemcpyDefault);
     cudaMemcpyToSymbol(curad::dev_delta_y, delta_ys.data(),
-                       sizeof(curad::vec<float, 3>) * curad::num_projects_per_kernel, 0,
-                       cudaMemcpyDefault);
+                       sizeof(curad::vec3f) * curad::num_projects_per_kernel, 0, cudaMemcpyDefault);
     cudaMemcpyToSymbol(curad::dev_delta_z, delta_zs.data(),
-                       sizeof(curad::vec<float, 3>) * curad::num_projects_per_kernel, 0,
-                       cudaMemcpyDefault);
+                       sizeof(curad::vec3f) * curad::num_projects_per_kernel, 0, cudaMemcpyDefault);
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
 }

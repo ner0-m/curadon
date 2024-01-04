@@ -20,22 +20,21 @@
 namespace curad::fp {
 namespace kernel {
 
-static constexpr std::uint64_t pixels_u_per_block_3d = 8;
-static constexpr std::uint64_t pixels_v_per_block_3d = 8;
-static constexpr std::uint64_t projections_per_block_3d = 8;
+static constexpr u64 pixels_u_per_block_3d = 8;
+static constexpr u64 pixels_v_per_block_3d = 8;
+static constexpr u64 projections_per_block_3d = 8;
 
-static constexpr std::int64_t num_projects_per_kernel_3d = 128;
+static constexpr i64 num_projects_per_kernel_3d = 128;
 
-__constant__ vec<float, 3> dev_uv_origins[num_projects_per_kernel_3d];
-__constant__ vec<float, 3> dev_delta_us[num_projects_per_kernel_3d];
-__constant__ vec<float, 3> dev_delta_vs[num_projects_per_kernel_3d];
-__constant__ vec<float, 3> dev_sources[num_projects_per_kernel_3d];
+__constant__ vec3f dev_uv_origins[num_projects_per_kernel_3d];
+__constant__ vec3f dev_delta_us[num_projects_per_kernel_3d];
+__constant__ vec3f dev_delta_vs[num_projects_per_kernel_3d];
+__constant__ vec3f dev_sources[num_projects_per_kernel_3d];
 
 /// tex is the volume
 template <class T>
-__global__ void kernel_forward_3d(device_span_3d<T> sinogram, vec<std::uint64_t, 3> vol_shape,
-                                  float DSD, float DSO, cudaTextureObject_t tex, float accuracy,
-                                  std::uint64_t start_proj) {
+__global__ void kernel_forward_3d(device_span_3d<T> sinogram, vec3u vol_shape, f32 DSD, f32 DSO,
+                                  cudaTextureObject_t tex, f32 accuracy, u64 start_proj) {
     const auto idx_u = threadIdx.x + blockIdx.x * blockDim.x;
     const auto idx_v = threadIdx.y + blockIdx.y * blockDim.y;
 
@@ -54,7 +53,7 @@ __global__ void kernel_forward_3d(device_span_3d<T> sinogram, vec<std::uint64_t,
 
     // The detector point this thread is working on
     // const auto det_point = uv_origin + idx_u * delta_u + idx_v * delta_v;
-    vec<float, 3> det_point;
+    vec3f det_point;
     det_point.x() = uv_origin.x() + idx_u * delta_u.x() + idx_v * delta_v.x();
     det_point.y() = uv_origin.y() + idx_u * delta_u.y() + idx_v * delta_v.y();
     det_point.z() = uv_origin.z() + idx_u * delta_u.z() + idx_v * delta_v.z();
@@ -65,10 +64,10 @@ __global__ void kernel_forward_3d(device_span_3d<T> sinogram, vec<std::uint64_t,
     // how many steps to take along dir should we walk
     // TODO: This walks from the source to the  detector all the way, this is hyper inefficient,
     // clean this up (i.e. interect with AABB of volume)
-    const auto nsamples = static_cast<std::int64_t>(::ceil(__fdividef(norm(dir), accuracy)));
+    const auto nsamples = static_cast<i64>(::ceil(__fdividef(norm(dir), accuracy)));
 
-    const vec<float, 3> boxmin{-1, -1, -1};
-    const vec<float, 3> boxmax{vol_shape[0] + 1, vol_shape[1] + 1, vol_shape[2] + 1};
+    const vec3f boxmin{-1, -1, -1};
+    const vec3f boxmax{vol_shape[0] + 1, vol_shape[1] + 1, vol_shape[2] + 1};
     auto [hit, tmin, tmax] = intersection(boxmin, boxmax, source, dir);
 
     if (!hit) {
@@ -80,24 +79,23 @@ __global__ void kernel_forward_3d(device_span_3d<T> sinogram, vec<std::uint64_t,
     const auto nsteps = static_cast<int>(ceilf((tmax - tmin) * nsamples));
     const auto step_length = (tmax - tmin) / nsteps;
 
-    vec<float, 3> t;
-    float accumulator = 0;
+    vec3f t;
+    f32 accumulator = 0;
 
     // TODO: i should start at a min t value, which is certainly not 0!
-    for (float i = tmin; i <= tmax; i += step_length) {
+    for (f32 i = tmin; i <= tmax; i += step_length) {
         t = dir * i + source;
-        accumulator += tex3D<float>(tex, t.x() + 0.5f, t.y() + 0.5f, t.z() + 0.5f);
+        accumulator += tex3D<f32>(tex, t.x() + 0.5f, t.y() + 0.5f, t.z() + 0.5f);
     }
 
-    float delta_length = norm(dir /* * vol_spacing */);
+    f32 delta_length = norm(dir /* * vol_spacing */);
     sinogram(idx_u, idx_v, proj_idx) = accumulator;
 }
 } // namespace kernel
 
 namespace detail {
 template <class T, class U>
-void setup_constants(device_volume<T> vol, device_measurement<U> sino, std::uint64_t proj_idx,
-                     std::uint64_t num_proj) {
+void setup_constants(device_volume<T> vol, device_measurement<U> sino, u64 proj_idx, u64 num_proj) {
     const auto vol_shape = vol.shape();
     const auto vol_size = vol.extent();
     const auto vol_spacing = vol.spacing();
@@ -110,26 +108,25 @@ void setup_constants(device_volume<T> vol, device_measurement<U> sino, std::uint
 
     const auto nangles = sino.nangles();
 
-    std::vector<vec<float, 3>> host_uv_origins;
-    std::vector<vec<float, 3>> host_deltas_us;
-    std::vector<vec<float, 3>> host_delta_vs;
-    std::vector<vec<float, 3>> host_sources;
+    std::vector<vec3f> host_uv_origins;
+    std::vector<vec3f> host_deltas_us;
+    std::vector<vec3f> host_delta_vs;
+    std::vector<vec3f> host_sources;
 
     // distance object to detector
     const auto DOD = DSD - DSO;
     for (int i = proj_idx; i < proj_idx + num_proj; ++i) {
-        vec<float, 3> init_source({0, 0, -DSO});
+        vec3f init_source({0, 0, -DSO});
 
         // Assume detector origin is at the bottom left corner, i.e. detector point (0, 0)
-        vec<float, 3> init_det_origin{
-            -det_spacing[0] * (det_shape[0] / 2.f) + det_spacing[0] * 0.5f, // u
-            -det_spacing[1] * (det_shape[1] / 2.f) + det_spacing[1] * 0.5f, // v
-            0.f};
+        vec3f init_det_origin{-det_spacing[0] * (det_shape[0] / 2.f) + det_spacing[0] * 0.5f, // u
+                              -det_spacing[1] * (det_shape[1] / 2.f) + det_spacing[1] * 0.5f, // v
+                              0.f};
 
         // detector point (1,0)
-        vec<float, 3> init_delta_u = init_det_origin + vec<float, 3>{det_spacing[0], 0.f, 0.f};
+        vec3f init_delta_u = init_det_origin + vec3f{det_spacing[0], 0.f, 0.f};
         // detector point (0, 1)
-        vec<float, 3> init_delta_v = init_det_origin + vec<float, 3>{0.f, det_spacing[1], 0.f};
+        vec3f init_delta_v = init_det_origin + vec3f{0.f, det_spacing[1], 0.f};
 
         // Apply geometry transformation, such that volume origin coincidence with world origin,
         // the volume voxels are unit size, for all projections, the image stays the same
@@ -194,20 +191,19 @@ void setup_constants(device_volume<T> vol, device_measurement<U> sino, std::uint
 
     // upload uv_origin, delta_u, delta_v, sources
     gpuErrchk(cudaMemcpyToSymbol(kernel::dev_uv_origins, host_uv_origins.data(),
-                                 sizeof(curad::vec<float, 3>) * host_uv_origins.size(), 0,
+                                 sizeof(curad::vec3f) * host_uv_origins.size(), 0,
                                  cudaMemcpyDefault));
 
     gpuErrchk(cudaMemcpyToSymbol(kernel::dev_delta_us, host_deltas_us.data(),
-                                 sizeof(curad::vec<float, 3>) * host_deltas_us.size(), 0,
+                                 sizeof(curad::vec3f) * host_deltas_us.size(), 0,
                                  cudaMemcpyDefault));
 
     gpuErrchk(cudaMemcpyToSymbol(kernel::dev_delta_vs, host_delta_vs.data(),
-                                 sizeof(curad::vec<float, 3>) * host_delta_vs.size(), 0,
+                                 sizeof(curad::vec3f) * host_delta_vs.size(), 0,
                                  cudaMemcpyDefault));
 
     gpuErrchk(cudaMemcpyToSymbol(kernel::dev_sources, host_sources.data(),
-                                 sizeof(curad::vec<float, 3>) * host_sources.size(), 0,
-                                 cudaMemcpyDefault));
+                                 sizeof(curad::vec3f) * host_sources.size(), 0, cudaMemcpyDefault));
 
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
@@ -232,7 +228,7 @@ void forward_3d(device_volume<T> vol, device_measurement<U> sino) {
     const auto nangles = sino.nangles();
 
     // TODO: make this configurable
-    const float accuracy = 1.f;
+    const f32 accuracy = 1.f;
 
     cudaArray_t array = ::curad::detail::allocate_cuarray(vol_shape[0], vol_shape[1], vol_shape[2]);
 
@@ -253,8 +249,8 @@ void forward_3d(device_volume<T> vol, device_measurement<U> sino) {
         // upload uv_origin, delta_u, delta_v, sources for the given projections
         detail::setup_constants(vol, sino, proj_idx, num_projections);
 
-        const std::uint64_t div_u = kernel::pixels_u_per_block_3d;
-        const std::uint64_t div_v = kernel::pixels_v_per_block_3d;
+        const u64 div_u = kernel::pixels_u_per_block_3d;
+        const u64 div_v = kernel::pixels_v_per_block_3d;
 
         dim3 grid(utils::round_up_division(det_shape[0], div_u),
                   utils::round_up_division(det_shape[1], div_v),

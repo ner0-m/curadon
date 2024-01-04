@@ -31,8 +31,8 @@ TEST_CASE("test_backprojection") {
     auto volume_ptr = thrust::raw_pointer_cast(volume.data());
     gpuErrchk(cudaDeviceSynchronize());
 
-    auto det_shape = curad::vec<std::uint64_t, 2>{width, height};
-    auto vol_shape = curad::vec<std::uint64_t, 3>{volsize, volsize, volsize};
+    auto det_shape = curad::vec<u64, 2>{width, height};
+    auto vol_shape = curad::vec<u64, 3>{volsize, volsize, volsize};
 
     // auto vol_spacing = curad::Vec<float, 3>{1, 1, 1};
     auto vol_spacing = curad::vec<float, 3>{3, 3, 3};

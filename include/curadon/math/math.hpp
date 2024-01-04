@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdint>
 
+#include "curadon/types.hpp"
+
 namespace curad::math {
 template <class T, class U>
 __host__ __device__ auto min(const T &x, const U &y) -> decltype(x < y ? x : y) {
@@ -15,14 +17,14 @@ __host__ __device__ auto max(const T &x, const U &y) -> decltype(x > y ? x : y) 
 }
 
 template <class T>
-__host__ __device__ auto floor(const T &x) -> std::int64_t {
+__host__ __device__ auto floor(const T &x) -> i64 {
     return ::floor(x);
-    // int xi = static_cast<std::int64_t>(x);
+    // int xi = static_cast<i64>(x);
     // return x < xi ? xi - 1 : xi;
 }
 
 template <class T>
-__host__ __device__ auto ceil(const T &x) -> std::int64_t {
+__host__ __device__ auto ceil(const T &x) -> i64 {
     return ::ceil(x);
 }
 

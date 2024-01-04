@@ -1,9 +1,12 @@
 #pragma once
 
+#include <limits>
+
 #include "curadon/math/vector.hpp"
+#include "curadon/types.hpp"
 
 namespace curad::fp::kernel {
-template <std::int64_t Dim>
+template <i64 Dim>
 __host__ __device__ std::tuple<bool, float, float>
 intersection(const vec<float, Dim> &boxmin, const vec<float, Dim> &boxmax,
              const vec<float, Dim> &ro, const vec<float, Dim> &rd) {
