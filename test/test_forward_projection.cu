@@ -1,4 +1,3 @@
-#include "curadon/bmp.hpp"
 #include "curadon/forward.hpp"
 
 #include "doctest/doctest.h"

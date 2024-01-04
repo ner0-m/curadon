@@ -154,7 +154,7 @@ inline void draw(float *data, int slice, int width, int height, int depth) {
     // build and compile our shader program
     // ------------------------------------
     // vertex shader
-    Shader ourShader("texture.vs", "texture.fs");
+    Shader ourShader("data/texture.vs", "data/texture.fs");
 
     // set up vertex data (and buffer(s)) and configure vertex attributes
     // ------------------------------------------------------------------
