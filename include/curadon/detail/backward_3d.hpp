@@ -16,16 +16,16 @@ static constexpr std::int64_t num_projects_per_kernel = 32;
 
 static constexpr std::int64_t num_voxels_per_thread = 8;
 
-__constant__ Vec<float, 3> dev_vol_origin[num_projects_per_kernel];
-__constant__ Vec<float, 3> dev_delta_x[num_projects_per_kernel];
-__constant__ Vec<float, 3> dev_delta_y[num_projects_per_kernel];
-__constant__ Vec<float, 3> dev_delta_z[num_projects_per_kernel];
+__constant__ vec<float, 3> dev_vol_origin[num_projects_per_kernel];
+__constant__ vec<float, 3> dev_delta_x[num_projects_per_kernel];
+__constant__ vec<float, 3> dev_delta_y[num_projects_per_kernel];
+__constant__ vec<float, 3> dev_delta_z[num_projects_per_kernel];
 
 // TODO: have constant memory array for sources!
 
 template <class T>
-__global__ void kernel_backprojection_3d(device_span_3d<T> volume, Vec<float, 3> source, float DSD,
-                                         float DSO, Vec<std::uint64_t, 2> det_shape,
+__global__ void kernel_backprojection_3d(device_span_3d<T> volume, vec<float, 3> source, float DSD,
+                                         float DSO, vec<std::uint64_t, 2> det_shape,
                                          std::int64_t cur_projection,
                                          std::int64_t total_projections, cudaTextureObject_t tex) {
     auto idx_x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -114,20 +114,20 @@ void setup_constants(device_volume<T> vol, device_measurement<U> sino, std::uint
     const auto vol_spacing = vol.spacing();
     const auto vol_offset = vol.offset();
 
-    std::vector<curad::Vec<float, 3>> vol_origins;
-    std::vector<curad::Vec<float, 3>> delta_xs;
-    std::vector<curad::Vec<float, 3>> delta_ys;
-    std::vector<curad::Vec<float, 3>> delta_zs;
+    std::vector<curad::vec<float, 3>> vol_origins;
+    std::vector<curad::vec<float, 3>> delta_xs;
+    std::vector<curad::vec<float, 3>> delta_ys;
+    std::vector<curad::vec<float, 3>> delta_zs;
 
     for (int i = start_proj; i < start_proj + num_projections; ++i) {
         // TODO: check what am I still missing to make this feature complete? Check with tigre
 
-        curad::Vec<float, 3> init_vol_origin = -vol_extent / 2.f + vol_spacing / 2.f + vol_offset;
+        curad::vec<float, 3> init_vol_origin = -vol_extent / 2.f + vol_spacing / 2.f + vol_offset;
         auto vol_origin =
             curad::geometry::rotate_yzy(init_vol_origin, sino.phi(i), sino.theta(i), sino.psi(i));
         vol_origins.push_back(vol_origin);
 
-        curad::Vec<float, 3> init_delta;
+        curad::vec<float, 3> init_delta;
         init_delta = init_vol_origin;
         init_delta[0] += vol_spacing[0];
         init_delta =
@@ -148,16 +148,16 @@ void setup_constants(device_volume<T> vol, device_measurement<U> sino, std::uint
     }
 
     cudaMemcpyToSymbol(curad::dev_vol_origin, vol_origins.data(),
-                       sizeof(curad::Vec<float, 3>) * curad::num_projects_per_kernel, 0,
+                       sizeof(curad::vec<float, 3>) * curad::num_projects_per_kernel, 0,
                        cudaMemcpyDefault);
     cudaMemcpyToSymbol(curad::dev_delta_x, delta_xs.data(),
-                       sizeof(curad::Vec<float, 3>) * curad::num_projects_per_kernel, 0,
+                       sizeof(curad::vec<float, 3>) * curad::num_projects_per_kernel, 0,
                        cudaMemcpyDefault);
     cudaMemcpyToSymbol(curad::dev_delta_y, delta_ys.data(),
-                       sizeof(curad::Vec<float, 3>) * curad::num_projects_per_kernel, 0,
+                       sizeof(curad::vec<float, 3>) * curad::num_projects_per_kernel, 0,
                        cudaMemcpyDefault);
     cudaMemcpyToSymbol(curad::dev_delta_z, delta_zs.data(),
-                       sizeof(curad::Vec<float, 3>) * curad::num_projects_per_kernel, 0,
+                       sizeof(curad::vec<float, 3>) * curad::num_projects_per_kernel, 0,
                        cudaMemcpyDefault);
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());

@@ -4,7 +4,7 @@
 
 namespace curad::geometry {
 template <class T>
-__host__ __device__ Vec<T, 3> rotate_yzy(const Vec<T, 3> &v, T phi, T theta, T psi) {
+__host__ __device__ vec<T, 3> rotate_yzy(const vec<T, 3> &v, T phi, T theta, T psi) {
     const auto cphi = std::cos(phi);
     const auto sphi = std::sin(phi);
     const auto ctheta = std::cos(theta);
@@ -12,7 +12,7 @@ __host__ __device__ Vec<T, 3> rotate_yzy(const Vec<T, 3> &v, T phi, T theta, T p
     const auto spsi = std::sin(psi);
     const auto cpsi = std::cos(psi);
 
-    Vec<T, 3> res = v;
+    vec<T, 3> res = v;
 
     // clang-format off
     // This is the combined rotation matrix
@@ -28,7 +28,7 @@ __host__ __device__ Vec<T, 3> rotate_yzy(const Vec<T, 3> &v, T phi, T theta, T p
 }
 
 template <class T>
-__host__ __device__ Vec<T, 3> rotate_roll_pitch_yaw(const Vec<T, 3> &v, T roll, T pitch, T yaw) {
+__host__ __device__ vec<T, 3> rotate_roll_pitch_yaw(const vec<T, 3> &v, T roll, T pitch, T yaw) {
     const auto croll = std::cos(roll);
     const auto sroll = std::sin(roll);
     const auto cpitch = std::cos(pitch);
@@ -36,7 +36,7 @@ __host__ __device__ Vec<T, 3> rotate_roll_pitch_yaw(const Vec<T, 3> &v, T roll, 
     const auto syaw = std::sin(yaw);
     const auto cyaw = std::cos(yaw);
 
-    Vec<T, 3> res = v;
+    vec<T, 3> res = v;
 
     res[0] = croll * cpitch * v[0] + (croll * spitch * syaw - sroll * cyaw) * v[1] +
              (croll * spitch * cyaw + sroll * syaw) * v[2];
@@ -48,10 +48,10 @@ __host__ __device__ Vec<T, 3> rotate_roll_pitch_yaw(const Vec<T, 3> &v, T roll, 
 }
 
 template <class T>
-__host__ __device__ Vec<T, 2> rotate(const Vec<T, 2> &v, T phi) {
+__host__ __device__ vec<T, 2> rotate(const vec<T, 2> &v, T phi) {
     const auto cos_phi = std::cos(phi);
     const auto sin_phi = std::sin(phi);
 
-    return Vec<T, 2>{v[0] * cos_phi - v[1] * sin_phi, v[0] * sin_phi + v[1] * cos_phi};
+    return vec<T, 2>{v[0] * cos_phi - v[1] * sin_phi, v[0] * sin_phi + v[1] * cos_phi};
 }
 } // namespace curad::geometry

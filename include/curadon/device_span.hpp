@@ -2,7 +2,6 @@
 
 #include <vector>
 
-#include "curadon/math/vector.hpp"
 #include "curadon/span.hpp"
 
 namespace curad {
@@ -60,7 +59,7 @@ class device_span_3d {
 
     static constexpr int Dim = 3;
 
-    device_span_3d(pointer data, Vec<size_type, Dim> shape)
+    device_span_3d(pointer data, vec<size_type, Dim> shape)
         : data_(data, shape.hprod())
         , shape_(shape) {
 
@@ -82,9 +81,9 @@ class device_span_3d {
 
     __host__ __device__ const_pointer device_data() const { return data_.data(); }
 
-    __host__ __device__ Vec<size_type, Dim> shape() const { return shape_; }
+    __host__ __device__ vec<size_type, Dim> shape() const { return shape_; }
 
-    __host__ __device__ Vec<strides_type, Dim> strides() const { return strides_; }
+    __host__ __device__ vec<strides_type, Dim> strides() const { return strides_; }
 
     __device__ reference operator()(size_type x, size_type y, size_type z) {
         return data_[x * strides_[0] + y * strides_[1] + z * strides_[2]];
@@ -97,9 +96,9 @@ class device_span_3d {
   private:
     device_span<value_type> data_;
 
-    Vec<size_type, Dim> shape_;
+    vec<size_type, Dim> shape_;
 
-    Vec<strides_type, Dim> strides_;
+    vec<strides_type, Dim> strides_;
 };
 
 /// Non-onwing span over 3D volume stored in device memory
@@ -108,14 +107,14 @@ class device_volume {
   public:
     static constexpr int Dim = 3;
 
-    device_volume(T *data, Vec<std::uint64_t, Dim> shape)
-        : device_volume<T>(data, shape, Vec<float, Dim>::ones()) {}
+    device_volume(T *data, vec<std::uint64_t, Dim> shape)
+        : device_volume<T>(data, shape, vec<float, Dim>::ones()) {}
 
-    device_volume(T *data, Vec<std::uint64_t, Dim> shape, Vec<float, Dim> spacing)
-        : device_volume<T>(data, shape, Vec<float, Dim>::ones(), Vec<float, Dim>::zeros()) {}
+    device_volume(T *data, vec<std::uint64_t, Dim> shape, vec<float, Dim> spacing)
+        : device_volume<T>(data, shape, vec<float, Dim>::ones(), vec<float, Dim>::zeros()) {}
 
-    device_volume(T *data, Vec<std::uint64_t, Dim> shape, Vec<float, Dim> spacing,
-                  Vec<float, Dim> offset)
+    device_volume(T *data, vec<std::uint64_t, Dim> shape, vec<float, Dim> spacing,
+                  vec<float, Dim> offset)
         : data_(data, shape)
         , spacing_(spacing)
         , extent_(shape * spacing_)
@@ -131,24 +130,24 @@ class device_volume {
 
     T const *device_data() const { return data_.device_data; }
 
-    Vec<std::uint64_t, Dim> shape() const { return data_.shape(); }
+    vec<std::uint64_t, Dim> shape() const { return data_.shape(); }
 
-    Vec<float, Dim> spacing() const { return spacing_; }
+    vec<float, Dim> spacing() const { return spacing_; }
 
-    Vec<float, Dim> extent() const { return extent_; }
+    vec<float, Dim> extent() const { return extent_; }
 
-    Vec<float, Dim> offset() const { return offset_; }
+    vec<float, Dim> offset() const { return offset_; }
 
     device_span_3d<T> kernel_span() { return data_; }
 
   private:
     device_span_3d<T> data_;
 
-    Vec<float, Dim> spacing_;
+    vec<float, Dim> spacing_;
 
-    Vec<float, Dim> extent_;
+    vec<float, Dim> extent_;
 
-    Vec<float, Dim> offset_;
+    vec<float, Dim> offset_;
 };
 
 template <class T>
@@ -157,15 +156,15 @@ class device_measurement {
     static constexpr int Dim = 3;
     static constexpr int DetectorDim = 2;
 
-    device_measurement(T *data, Vec<std::uint64_t, Dim> shape)
-        : device_measurement(data, shape, Vec<float, DetectorDim>::ones()) {}
+    device_measurement(T *data, vec<std::uint64_t, Dim> shape)
+        : device_measurement(data, shape, vec<float, DetectorDim>::ones()) {}
 
-    device_measurement(T *data, Vec<std::uint64_t, Dim> shape, Vec<float, DetectorDim> spacing)
-        : device_measurement(data, shape, Vec<float, DetectorDim>::ones(),
-                             Vec<float, DetectorDim>::zeros()) {}
+    device_measurement(T *data, vec<std::uint64_t, Dim> shape, vec<float, DetectorDim> spacing)
+        : device_measurement(data, shape, vec<float, DetectorDim>::ones(),
+                             vec<float, DetectorDim>::zeros()) {}
 
-    device_measurement(T *data, Vec<std::uint64_t, Dim> shape, Vec<float, DetectorDim> spacing,
-                       Vec<float, DetectorDim> offset)
+    device_measurement(T *data, vec<std::uint64_t, Dim> shape, vec<float, DetectorDim> spacing,
+                       vec<float, DetectorDim> offset)
         : data_(data, shape)
         , spacing_(spacing)
         , offset_(offset)
@@ -181,18 +180,18 @@ class device_measurement {
         , roll_(0)
         , yaw_(0) {}
 
-    device_measurement(T *data, Vec<std::uint64_t, DetectorDim> shape, float DSD, float DSO,
+    device_measurement(T *data, vec<std::uint64_t, DetectorDim> shape, float DSD, float DSO,
                        std::vector<float> phi)
-        : device_measurement(data, shape, Vec<float, DetectorDim>::ones(), DSD, DSO, phi) {}
+        : device_measurement(data, shape, vec<float, DetectorDim>::ones(), DSD, DSO, phi) {}
 
-    device_measurement(T *data, Vec<std::uint64_t, DetectorDim> shape,
-                       Vec<float, DetectorDim> spacing, float DSD, float DSO,
+    device_measurement(T *data, vec<std::uint64_t, DetectorDim> shape,
+                       vec<float, DetectorDim> spacing, float DSD, float DSO,
                        std::vector<float> phi)
-        : device_measurement(data, shape, Vec<float, DetectorDim>::ones(),
-                             Vec<float, DetectorDim>::zeros(), DSD, DSO, phi) {}
+        : device_measurement(data, shape, vec<float, DetectorDim>::ones(),
+                             vec<float, DetectorDim>::zeros(), DSD, DSO, phi) {}
 
-    device_measurement(T *data, Vec<std::uint64_t, DetectorDim> shape,
-                       Vec<float, DetectorDim> spacing, Vec<float, DetectorDim> offset, float DSD,
+    device_measurement(T *data, vec<std::uint64_t, DetectorDim> shape,
+                       vec<float, DetectorDim> spacing, vec<float, DetectorDim> offset, float DSD,
                        float DSO, std::vector<float> phi)
         : data_(data, {shape.x(), shape.y(), phi.size()})
         , spacing_(spacing)
@@ -217,17 +216,17 @@ class device_measurement {
 
     T const *device_data() const { return data_.device_data(); }
 
-    Vec<std::uint64_t, Dim> shape() const { return data_.shape(); }
+    vec<std::uint64_t, Dim> shape() const { return data_.shape(); }
 
-    Vec<std::uint64_t, DetectorDim> detector_shape() const {
+    vec<std::uint64_t, DetectorDim> detector_shape() const {
         return {data_.shape()[0], data_.shape()[1]};
     }
 
-    Vec<float, DetectorDim> spacing() const { return spacing_; }
+    vec<float, DetectorDim> spacing() const { return spacing_; }
 
-    Vec<float, DetectorDim> extent() const { return extent_; }
+    vec<float, DetectorDim> extent() const { return extent_; }
 
-    Vec<float, DetectorDim> offset() const { return offset_; }
+    vec<float, DetectorDim> offset() const { return offset_; }
 
     device_span_3d<T> kernel_span() { return data_; }
 
@@ -261,26 +260,26 @@ class device_measurement {
 
     float yaw() const { return yaw_; }
 
-    Vec<float, Dim> source() const { return {0, 0, -distance_source_to_object()}; }
+    vec<float, Dim> source() const { return {0, 0, -distance_source_to_object()}; }
 
     device_span_3d<T> slice(std::uint64_t offset, std::uint64_t count = 1) {
-        Vec<std::uint64_t, Dim> new_shape{shape()[0], shape()[1], count};
+        vec<std::uint64_t, Dim> new_shape{shape()[0], shape()[1], count};
         auto ptr = device_data() + offset * data_.strides()[2];
         return device_span_3d<T>(ptr, new_shape);
     }
 
     // Builder pattern to set many variables:
-    device_measurement<T> &set_spacing(Vec<float, DetectorDim> new_spacing) {
+    device_measurement<T> &set_spacing(vec<float, DetectorDim> new_spacing) {
         spacing_ = new_spacing;
         return *this;
     }
 
-    device_measurement<T> &set_extent(Vec<float, DetectorDim> new_extent) {
+    device_measurement<T> &set_extent(vec<float, DetectorDim> new_extent) {
         extent_ = new_extent;
         return *this;
     }
 
-    device_measurement<T> &set_offset(Vec<float, DetectorDim> new_offset) {
+    device_measurement<T> &set_offset(vec<float, DetectorDim> new_offset) {
         offset_ = new_offset;
         return *this;
     }
@@ -333,11 +332,11 @@ class device_measurement {
   private:
     device_span_3d<T> data_;
 
-    Vec<float, DetectorDim> spacing_;
+    vec<float, DetectorDim> spacing_;
 
-    Vec<float, DetectorDim> extent_;
+    vec<float, DetectorDim> extent_;
 
-    Vec<float, DetectorDim> offset_;
+    vec<float, DetectorDim> offset_;
 
     // Geometry information about measurements
     std::uint64_t nangles_;

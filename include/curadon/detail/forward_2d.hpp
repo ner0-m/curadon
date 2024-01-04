@@ -26,11 +26,11 @@ static constexpr std::uint64_t num_projections_per_kernel_2d = 1;
 /// tex is the volume
 template <class T>
 __global__ void
-kernel_forward_2d(T *sinogram, Vec<std::uint64_t, 2> vol_shape, float DSD, float DSO,
+kernel_forward_2d(T *sinogram, vec<std::uint64_t, 2> vol_shape, float DSD, float DSO,
                   std::uint64_t det_shape, std::int64_t total_projections, cudaTextureObject_t tex,
                   float accuracy,
                   // These should be moved to constant memory
-                  Vec<float, 2> *uv_origins, Vec<float, 2> *delta_us, Vec<float, 2> *sources) {
+                  vec<float, 2> *uv_origins, vec<float, 2> *delta_us, vec<float, 2> *sources) {
     const auto idx_u = threadIdx.x + blockIdx.x * blockDim.x;
 
     // TODO: make this less strict, enable this kernel to be called multiple times
@@ -56,7 +56,7 @@ kernel_forward_2d(T *sinogram, Vec<std::uint64_t, 2> vol_shape, float DSD, float
 
     // The detector point this thread is working on
     // const auto det_point = uv_origin + idx_u * delta_u + idx_v * delta_v;
-    Vec<float, 2> det_point;
+    vec<float, 2> det_point;
     det_point.x() = uv_origin.x() + idx_u * delta_u.x();
     det_point.y() = uv_origin.y() + idx_u * delta_u.y();
 
@@ -81,8 +81,8 @@ kernel_forward_2d(T *sinogram, Vec<std::uint64_t, 2> vol_shape, float DSD, float
                det_point.y());
     }
 
-    const Vec<float, 2> boxmin{-1, -1};
-    const Vec<float, 2> boxmax{vol_shape[0] + 1, vol_shape[1] + 1};
+    const vec<float, 2> boxmin{-1, -1};
+    const vec<float, 2> boxmax{vol_shape[0] + 1, vol_shape[1] + 1};
     auto [hit, tmin, tmax] = intersection(boxmin, boxmax, source, dir);
 
     if (!hit) {
@@ -100,7 +100,7 @@ kernel_forward_2d(T *sinogram, Vec<std::uint64_t, 2> vol_shape, float DSD, float
                proj_number, idx_u, nsteps, tmin, tmax, step_length, dir_len);
     }
 
-    Vec<float, 2> p;
+    vec<float, 2> p;
     float accumulator = 0;
 
     auto step = 0;
@@ -127,8 +127,8 @@ kernel_forward_2d(T *sinogram, Vec<std::uint64_t, 2> vol_shape, float DSD, float
 } // namespace kernel
 
 template <class T, class U>
-void forward_2d(T *volume, Vec<std::uint64_t, 2> vol_shape, Vec<float, 2> vol_size,
-                Vec<float, 2> vol_spacing, Vec<float, 2> vol_offset, U *sinogram,
+void forward_2d(T *volume, vec<std::uint64_t, 2> vol_shape, vec<float, 2> vol_size,
+                vec<float, 2> vol_spacing, vec<float, 2> vol_offset, U *sinogram,
                 std::uint64_t det_shape, float det_spacing, std::vector<float> angles, float DSD,
                 float DSO) {
 
@@ -180,22 +180,22 @@ void forward_2d(T *volume, Vec<std::uint64_t, 2> vol_shape, Vec<float, 2> vol_si
             std::min<int>(kernel::num_projections_per_kernel_2d, num_projections_left);
 
         // TODO: compute uv origins, delta_u, delta_v, sources
-        thrust::host_vector<Vec<float, 2>> host_uv_origins(num_projections);
-        thrust::host_vector<Vec<float, 2>> host_deltas_us(num_projections);
-        thrust::host_vector<Vec<float, 2>> host_sources(num_projections);
+        thrust::host_vector<vec<float, 2>> host_uv_origins(num_projections);
+        thrust::host_vector<vec<float, 2>> host_deltas_us(num_projections);
+        thrust::host_vector<vec<float, 2>> host_sources(num_projections);
 
         // distance object to detector
         const auto DOD = DSD - DSO;
         for (int i = 0; i < num_projections; ++i) {
             auto angle = angles[proj_idx + i];
-            Vec<float, 2> init_source({0, -DSO});
+            vec<float, 2> init_source({0, -DSO});
 
             // Assume detector origin is at the bottom left corner, i.e. detector point (0, 0)
-            Vec<float, 2> init_det_origin{-det_spacing * (det_shape / 2.f) + det_spacing * 0.5f,
+            vec<float, 2> init_det_origin{-det_spacing * (det_shape / 2.f) + det_spacing * 0.5f,
                                           0.f};
 
             // detector point (1)
-            Vec<float, 2> init_delta_u = init_det_origin + Vec<float, 2>{det_spacing, 0.f};
+            vec<float, 2> init_delta_u = init_det_origin + vec<float, 2>{det_spacing, 0.f};
 
             // Apply geometry transformation, such that volume origin coincidence with world origin,
             // the volume voxels are unit size, for all projections, the image stays the same
@@ -233,9 +233,9 @@ void forward_2d(T *volume, Vec<std::uint64_t, 2> vol_shape, Vec<float, 2> vol_si
         }
 
         // upload uv_origin, delta_u, delta_v, sources
-        thrust::device_vector<Vec<float, 2>> dev_uv_origins = host_uv_origins;
-        thrust::device_vector<Vec<float, 2>> dev_deltas_us = host_deltas_us;
-        thrust::device_vector<Vec<float, 2>> dev_sources = host_sources;
+        thrust::device_vector<vec<float, 2>> dev_uv_origins = host_uv_origins;
+        thrust::device_vector<vec<float, 2>> dev_deltas_us = host_deltas_us;
+        thrust::device_vector<vec<float, 2>> dev_sources = host_sources;
 
         auto uv_origins = thrust::raw_pointer_cast(dev_uv_origins.data());
         auto deltas_us = thrust::raw_pointer_cast(dev_deltas_us.data());

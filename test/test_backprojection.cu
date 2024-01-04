@@ -8,6 +8,7 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
+#include "read.hpp"
 #include "show.hpp"
 
 #include "curadon/backward.hpp"
@@ -16,6 +17,9 @@ TEST_CASE("test_backprojection") {
 
     const auto volsize = 64;
     auto [data, width, height, nangles, angles, DSO, DSD] = curad::easy::read("demofile2.txt");
+
+    std::transform(angles.begin(), angles.end(), angles.begin(),
+                   [](float x) { return x * M_PI / 180.; });
 
     thrust::host_vector<float> host_sino(width * height * nangles, 0);
     std::copy(data.begin(), data.end(), host_sino.begin());
@@ -27,12 +31,12 @@ TEST_CASE("test_backprojection") {
     auto volume_ptr = thrust::raw_pointer_cast(volume.data());
     gpuErrchk(cudaDeviceSynchronize());
 
-    auto det_shape = curad::Vec<std::uint64_t, 2>{width, height};
-    auto vol_shape = curad::Vec<std::uint64_t, 3>{volsize, volsize, volsize};
+    auto det_shape = curad::vec<std::uint64_t, 2>{width, height};
+    auto vol_shape = curad::vec<std::uint64_t, 3>{volsize, volsize, volsize};
 
     // auto vol_spacing = curad::Vec<float, 3>{1, 1, 1};
-    auto vol_spacing = curad::Vec<float, 3>{3, 3, 3};
-    auto vol_offset = curad::Vec<float, 3>{0, 0, 0};
+    auto vol_spacing = curad::vec<float, 3>{3, 3, 3};
+    auto vol_offset = curad::vec<float, 3>{0, 0, 0};
 
     curad::device_volume<float> vol_span(volume_ptr, vol_shape, vol_spacing, vol_offset);
     curad::device_measurement<float> sino_span(sino_ptr, {width, height}, DSD, DSO, angles);

@@ -6,20 +6,17 @@
 namespace curad {
 
 template <class T, std::int64_t Dim>
-class Vec;
-
-template <class T, std::int64_t Dim>
-class Vec {
+class vec {
   public:
-    __host__ __device__ Vec() = default;
+    __host__ __device__ vec() = default;
 
-    __host__ __device__ Vec(const T &t)
+    __host__ __device__ vec(const T &t)
         : data_{t} {}
 
-    __host__ __device__ Vec(const T &x, const T &y)
+    __host__ __device__ vec(const T &x, const T &y)
         : data_{x, y} {}
 
-    __host__ __device__ Vec(const T &x, const T &y, const T &z)
+    __host__ __device__ vec(const T &x, const T &y, const T &z)
         : data_{x, y, z} {}
 
     __host__ __device__ std::size_t size() const { return Dim; }
@@ -44,7 +41,7 @@ class Vec {
 
     __host__ __device__ const T &z() const { return data_[2]; }
 
-    __host__ __device__ Vec &normalize();
+    __host__ __device__ vec &normalize();
 
     __host__ __device__ T hprod() const {
         T res = 1;
@@ -55,8 +52,8 @@ class Vec {
         return res;
     }
 
-    __host__ __device__ static Vec<T, Dim> zeros() noexcept {
-        Vec<T, Dim> res;
+    __host__ __device__ static vec<T, Dim> zeros() noexcept {
+        vec<T, Dim> res;
 #pragma unroll
         for (int i = 0; i < Dim; ++i) {
             res[i] = T(0);
@@ -64,8 +61,8 @@ class Vec {
         return res;
     }
 
-    __host__ __device__ static Vec<T, Dim> ones() noexcept {
-        Vec<T, Dim> res;
+    __host__ __device__ static vec<T, Dim> ones() noexcept {
+        vec<T, Dim> res;
 #pragma unroll
         for (int i = 0; i < Dim; ++i) {
             res[i] = T(1);
@@ -74,8 +71,8 @@ class Vec {
     }
 
     template <std::int64_t NewDim>
-    __host__ __device__ auto head() const noexcept -> Vec<T, NewDim> {
-        Vec<T, NewDim> result;
+    __host__ __device__ auto head() const noexcept -> vec<T, NewDim> {
+        vec<T, NewDim> result;
 
 #pragma unroll
         for (int i = 0; i < NewDim; ++i) {
@@ -84,7 +81,7 @@ class Vec {
         return result;
     }
 
-    __host__ __device__ auto operator+=(const Vec<T, Dim> &other) -> Vec & {
+    __host__ __device__ auto operator+=(const vec<T, Dim> &other) -> vec & {
 #pragma unroll
         for (int i = 0; i < Dim; ++i) {
             (*this)[i] += other[i];
@@ -92,7 +89,7 @@ class Vec {
         return *this;
     }
 
-    __host__ __device__ auto operator/=(const T &scalar) -> Vec & {
+    __host__ __device__ auto operator/=(const T &scalar) -> vec & {
 #pragma unroll
         for (int i = 0; i < Dim; ++i) {
             (*this)[i] /= scalar;
@@ -101,8 +98,8 @@ class Vec {
     }
 
     template <class U>
-    __host__ __device__ Vec<U, Dim> as() const {
-        Vec<U, Dim> other;
+    __host__ __device__ vec<U, Dim> as() const {
+        vec<U, Dim> other;
 
 #pragma unroll
         for (int i = 0; i < Dim; ++i) {
@@ -117,8 +114,8 @@ class Vec {
 };
 
 template <class T, std::int64_t Dim>
-__host__ __device__ auto operator+(const Vec<T, Dim> &x) -> Vec<T, Dim> {
-    Vec<T, Dim> result;
+__host__ __device__ auto operator+(const vec<T, Dim> &x) -> vec<T, Dim> {
+    vec<T, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -129,8 +126,8 @@ __host__ __device__ auto operator+(const Vec<T, Dim> &x) -> Vec<T, Dim> {
 }
 
 template <class T, std::int64_t Dim>
-__host__ __device__ auto operator-(const Vec<T, Dim> &x) -> Vec<T, Dim> {
-    Vec<T, Dim> result;
+__host__ __device__ auto operator-(const vec<T, Dim> &x) -> vec<T, Dim> {
+    vec<T, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -144,10 +141,10 @@ __host__ __device__ auto operator-(const Vec<T, Dim> &x) -> Vec<T, Dim> {
 /*           Addition                   */
 /* ==================================== */
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator+(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rhs)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto operator+(const vec<T, Dim> &lhs, const vec<U, Dim> &rhs)
+    -> vec<std::common_type_t<T, U>, Dim> {
     using V = std::common_type_t<T, U>;
-    Vec<V, Dim> result = lhs;
+    vec<V, Dim> result = lhs;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -157,10 +154,10 @@ __host__ __device__ auto operator+(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rh
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator+(const Vec<T, Dim> &lhs, const U &scalar)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto operator+(const vec<T, Dim> &lhs, const U &scalar)
+    -> vec<std::common_type_t<T, U>, Dim> {
     using V = std::common_type_t<T, U>;
-    Vec<V, Dim> result = lhs;
+    vec<V, Dim> result = lhs;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -170,8 +167,8 @@ __host__ __device__ auto operator+(const Vec<T, Dim> &lhs, const U &scalar)
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator+(const U &scalar, const Vec<T, Dim> &rhs)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto operator+(const U &scalar, const vec<T, Dim> &rhs)
+    -> vec<std::common_type_t<T, U>, Dim> {
     return rhs + scalar;
 }
 
@@ -179,10 +176,10 @@ __host__ __device__ auto operator+(const U &scalar, const Vec<T, Dim> &rhs)
 /*           Subtraction                */
 /* ==================================== */
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator-(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rhs)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto operator-(const vec<T, Dim> &lhs, const vec<U, Dim> &rhs)
+    -> vec<std::common_type_t<T, U>, Dim> {
     using V = std::common_type_t<T, U>;
-    Vec<V, Dim> result;
+    vec<V, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -193,10 +190,10 @@ __host__ __device__ auto operator-(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rh
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator-(const Vec<T, Dim> &lhs, const U &scalar)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto operator-(const vec<T, Dim> &lhs, const U &scalar)
+    -> vec<std::common_type_t<T, U>, Dim> {
     using V = std::common_type_t<T, U>;
-    Vec<V, Dim> result;
+    vec<V, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -206,10 +203,10 @@ __host__ __device__ auto operator-(const Vec<T, Dim> &lhs, const U &scalar)
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator-(const T &scalar, const Vec<U, Dim> &rhs)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto operator-(const T &scalar, const vec<U, Dim> &rhs)
+    -> vec<std::common_type_t<T, U>, Dim> {
     using V = std::common_type_t<T, U>;
-    Vec<V, Dim> result;
+    vec<V, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -222,10 +219,10 @@ __host__ __device__ auto operator-(const T &scalar, const Vec<U, Dim> &rhs)
 /*           Multiplication             */
 /* ==================================== */
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator*(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rhs)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto operator*(const vec<T, Dim> &lhs, const vec<U, Dim> &rhs)
+    -> vec<std::common_type_t<T, U>, Dim> {
     using V = std::common_type_t<T, U>;
-    Vec<V, Dim> result;
+    vec<V, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -235,10 +232,10 @@ __host__ __device__ auto operator*(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rh
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator*(const Vec<T, Dim> &lhs, const U &scalar)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto operator*(const vec<T, Dim> &lhs, const U &scalar)
+    -> vec<std::common_type_t<T, U>, Dim> {
     using V = std::common_type_t<T, U>;
-    Vec<V, Dim> result;
+    vec<V, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -248,8 +245,8 @@ __host__ __device__ auto operator*(const Vec<T, Dim> &lhs, const U &scalar)
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator*(const U &scalar, const Vec<T, Dim> &rhs)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto operator*(const U &scalar, const vec<T, Dim> &rhs)
+    -> vec<std::common_type_t<T, U>, Dim> {
     return rhs * scalar;
 }
 
@@ -257,10 +254,10 @@ __host__ __device__ auto operator*(const U &scalar, const Vec<T, Dim> &rhs)
 /*           Division                   */
 /* ==================================== */
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator/(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rhs)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto operator/(const vec<T, Dim> &lhs, const vec<U, Dim> &rhs)
+    -> vec<std::common_type_t<T, U>, Dim> {
     using V = std::common_type_t<T, U>;
-    Vec<V, Dim> result;
+    vec<V, Dim> result;
     for (int i = 0; i < Dim; ++i) {
         result[i] = lhs[i] / rhs[i];
     }
@@ -268,10 +265,10 @@ __host__ __device__ auto operator/(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rh
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator/(const Vec<T, Dim> &lhs, const U &scalar)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto operator/(const vec<T, Dim> &lhs, const U &scalar)
+    -> vec<std::common_type_t<T, U>, Dim> {
     using V = std::common_type_t<T, U>;
-    Vec<V, Dim> result = lhs;
+    vec<V, Dim> result = lhs;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -281,10 +278,10 @@ __host__ __device__ auto operator/(const Vec<T, Dim> &lhs, const U &scalar)
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator/(const T &scalar, const Vec<U, Dim> &rhs)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto operator/(const T &scalar, const vec<U, Dim> &rhs)
+    -> vec<std::common_type_t<T, U>, Dim> {
     using V = std::common_type_t<T, U>;
-    Vec<V, Dim> result;
+    vec<V, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -297,9 +294,9 @@ __host__ __device__ auto operator/(const T &scalar, const Vec<U, Dim> &rhs)
 /*           Comparison                 */
 /* ==================================== */
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator==(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rhs)
-    -> Vec<bool, Dim> {
-    Vec<bool, Dim> result;
+__host__ __device__ auto operator==(const vec<T, Dim> &lhs, const vec<U, Dim> &rhs)
+    -> vec<bool, Dim> {
+    vec<bool, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -309,15 +306,15 @@ __host__ __device__ auto operator==(const Vec<T, Dim> &lhs, const Vec<U, Dim> &r
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator!=(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rhs)
-    -> Vec<bool, Dim> {
+__host__ __device__ auto operator!=(const vec<T, Dim> &lhs, const vec<U, Dim> &rhs)
+    -> vec<bool, Dim> {
     return !(lhs == rhs);
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator<(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rhs)
-    -> Vec<bool, Dim> {
-    Vec<bool, Dim> result;
+__host__ __device__ auto operator<(const vec<T, Dim> &lhs, const vec<U, Dim> &rhs)
+    -> vec<bool, Dim> {
+    vec<bool, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -327,9 +324,9 @@ __host__ __device__ auto operator<(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rh
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator<=(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rhs)
-    -> Vec<bool, Dim> {
-    Vec<bool, Dim> result;
+__host__ __device__ auto operator<=(const vec<T, Dim> &lhs, const vec<U, Dim> &rhs)
+    -> vec<bool, Dim> {
+    vec<bool, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -339,9 +336,9 @@ __host__ __device__ auto operator<=(const Vec<T, Dim> &lhs, const Vec<U, Dim> &r
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator>(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rhs)
-    -> Vec<bool, Dim> {
-    Vec<bool, Dim> result;
+__host__ __device__ auto operator>(const vec<T, Dim> &lhs, const vec<U, Dim> &rhs)
+    -> vec<bool, Dim> {
+    vec<bool, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -351,9 +348,9 @@ __host__ __device__ auto operator>(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rh
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator>=(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rhs)
-    -> Vec<bool, Dim> {
-    Vec<bool, Dim> result;
+__host__ __device__ auto operator>=(const vec<T, Dim> &lhs, const vec<U, Dim> &rhs)
+    -> vec<bool, Dim> {
+    vec<bool, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -366,9 +363,9 @@ __host__ __device__ auto operator>=(const Vec<T, Dim> &lhs, const Vec<U, Dim> &r
 /*           Logic                      */
 /* ==================================== */
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto operator&&(const Vec<T, Dim> &lhs, const Vec<U, Dim> &rhs)
-    -> Vec<bool, Dim> {
-    Vec<bool, Dim> result;
+__host__ __device__ auto operator&&(const vec<T, Dim> &lhs, const vec<U, Dim> &rhs)
+    -> vec<bool, Dim> {
+    vec<bool, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -381,7 +378,7 @@ __host__ __device__ auto operator&&(const Vec<T, Dim> &lhs, const Vec<U, Dim> &r
 /*           Other                      */
 /* ==================================== */
 template <class T, std::int64_t Dim>
-__host__ __device__ auto argmax(const Vec<T, Dim> &v) -> std::size_t {
+__host__ __device__ auto argmax(const vec<T, Dim> &v) -> std::size_t {
     // TODO: use thrust for this
     auto current_max = v[0];
     auto maxpos = 0;
@@ -397,7 +394,7 @@ __host__ __device__ auto argmax(const Vec<T, Dim> &v) -> std::size_t {
 }
 
 template <class T, std::int64_t Dim>
-__host__ __device__ auto norm(const Vec<T, Dim> &v) -> T {
+__host__ __device__ auto norm(const vec<T, Dim> &v) -> T {
     // TODO: use thrust for this
     T result = 0;
 
@@ -410,14 +407,14 @@ __host__ __device__ auto norm(const Vec<T, Dim> &v) -> T {
 }
 
 template <class T, std::int64_t Dim>
-__host__ __device__ auto normalized(const Vec<T, Dim> &v) -> Vec<T, Dim> {
+__host__ __device__ auto normalized(const vec<T, Dim> &v) -> vec<T, Dim> {
     auto copy = v;
     copy.normalize();
     return copy;
 }
 
 template <class T, std::int64_t Dim>
-__host__ __device__ auto floor(const Vec<T, Dim> &v) -> Vec<T, Dim> {
+__host__ __device__ auto floor(const vec<T, Dim> &v) -> vec<T, Dim> {
     // TODO: use thrust for this
     auto copy = v;
 
@@ -429,9 +426,9 @@ __host__ __device__ auto floor(const Vec<T, Dim> &v) -> Vec<T, Dim> {
 }
 
 template <class T, std::int64_t Dim>
-__host__ __device__ auto floori(const Vec<T, Dim> &v) -> Vec<std::int64_t, Dim> {
+__host__ __device__ auto floori(const vec<T, Dim> &v) -> vec<std::int64_t, Dim> {
     // TODO: use thrust for this
-    Vec<std::int64_t, Dim> result;
+    vec<std::int64_t, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -441,9 +438,9 @@ __host__ __device__ auto floori(const Vec<T, Dim> &v) -> Vec<std::int64_t, Dim> 
 }
 
 template <class T, std::int64_t Dim>
-__host__ __device__ auto ceil(const Vec<T, Dim> &v) -> Vec<T, Dim> {
+__host__ __device__ auto ceil(const vec<T, Dim> &v) -> vec<T, Dim> {
     // TODO: use thrust for this
-    Vec<T, Dim> result;
+    vec<T, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -453,9 +450,9 @@ __host__ __device__ auto ceil(const Vec<T, Dim> &v) -> Vec<T, Dim> {
 }
 
 template <class T, std::int64_t Dim>
-__host__ __device__ auto ceili(const Vec<T, Dim> &v) -> Vec<std::int64_t, Dim> {
+__host__ __device__ auto ceili(const vec<T, Dim> &v) -> vec<std::int64_t, Dim> {
     // TODO: use thrust for this
-    Vec<std::int64_t, Dim> result;
+    vec<std::int64_t, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -465,7 +462,7 @@ __host__ __device__ auto ceili(const Vec<T, Dim> &v) -> Vec<std::int64_t, Dim> {
 }
 
 template <class T, std::int64_t Dim>
-__host__ __device__ auto abs(const Vec<T, Dim> &v) -> Vec<T, Dim> {
+__host__ __device__ auto abs(const vec<T, Dim> &v) -> vec<T, Dim> {
     // TODO: use thrust for this
     auto copy = v;
 
@@ -477,11 +474,11 @@ __host__ __device__ auto abs(const Vec<T, Dim> &v) -> Vec<T, Dim> {
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto min(const Vec<T, Dim> &x, const Vec<U, Dim> &y)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto min(const vec<T, Dim> &x, const vec<U, Dim> &y)
+    -> vec<std::common_type_t<T, U>, Dim> {
     // TODO: use thrust for this
     using V = std::common_type_t<T, U>;
-    Vec<V, Dim> result;
+    vec<V, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -491,11 +488,11 @@ __host__ __device__ auto min(const Vec<T, Dim> &x, const Vec<U, Dim> &y)
 }
 
 template <class T, class U, std::int64_t Dim>
-__host__ __device__ auto max(const Vec<T, Dim> &x, const Vec<U, Dim> &y)
-    -> Vec<std::common_type_t<T, U>, Dim> {
+__host__ __device__ auto max(const vec<T, Dim> &x, const vec<U, Dim> &y)
+    -> vec<std::common_type_t<T, U>, Dim> {
     // TODO: use thrust for this
     using V = std::common_type_t<T, U>;
-    Vec<V, Dim> result;
+    vec<V, Dim> result;
 
 #pragma unroll
     for (int i = 0; i < Dim; ++i) {
@@ -505,7 +502,7 @@ __host__ __device__ auto max(const Vec<T, Dim> &x, const Vec<U, Dim> &y)
 }
 
 template <class T, std::int64_t Dim>
-__host__ __device__ auto sign(const Vec<T, Dim> &v) -> Vec<T, Dim> {
+__host__ __device__ auto sign(const vec<T, Dim> &v) -> vec<T, Dim> {
     // TODO: use thrust for this
     auto copy = v;
 
@@ -518,9 +515,18 @@ __host__ __device__ auto sign(const Vec<T, Dim> &v) -> Vec<T, Dim> {
 
 /// @brief normalize the current vector
 template <class T, std::int64_t Dim>
-__host__ __device__ Vec<T, Dim> &Vec<T, Dim>::normalize() {
+__host__ __device__ vec<T, Dim> &vec<T, Dim>::normalize() {
     auto norm = ::curad::norm(*this);
     *this /= norm;
     return *this;
 }
+
+using vec2f = vec<float, 2>;
+using vec3f = vec<float, 3>;
+
+using vec2i = vec<std::int64_t, 2>;
+using vec3i = vec<std::int64_t, 3>;
+
+using vec2ui = vec<std::uint64_t, 2>;
+using vec3ui = vec<std::uint64_t, 3>;
 } // namespace curad

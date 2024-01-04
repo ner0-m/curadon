@@ -1,13 +1,12 @@
 #pragma once
 
 #include "curadon/detail/error.h"
+#include "curadon/detail/intersection.h"
 #include "curadon/detail/texture.hpp"
 #include "curadon/device_span.hpp"
 #include "curadon/math/vector.hpp"
 #include "curadon/rotation.h"
 #include "curadon/utils.hpp"
-
-#include "curadon/detail/intersection.h"
 
 #include <cmath>
 #include <cstdio>
@@ -27,14 +26,14 @@ static constexpr std::uint64_t projections_per_block_3d = 8;
 
 static constexpr std::int64_t num_projects_per_kernel_3d = 128;
 
-__constant__ Vec<float, 3> dev_uv_origins[num_projects_per_kernel_3d];
-__constant__ Vec<float, 3> dev_delta_us[num_projects_per_kernel_3d];
-__constant__ Vec<float, 3> dev_delta_vs[num_projects_per_kernel_3d];
-__constant__ Vec<float, 3> dev_sources[num_projects_per_kernel_3d];
+__constant__ vec<float, 3> dev_uv_origins[num_projects_per_kernel_3d];
+__constant__ vec<float, 3> dev_delta_us[num_projects_per_kernel_3d];
+__constant__ vec<float, 3> dev_delta_vs[num_projects_per_kernel_3d];
+__constant__ vec<float, 3> dev_sources[num_projects_per_kernel_3d];
 
 /// tex is the volume
 template <class T>
-__global__ void kernel_forward_3d(device_span_3d<T> sinogram, Vec<std::uint64_t, 3> vol_shape,
+__global__ void kernel_forward_3d(device_span_3d<T> sinogram, vec<std::uint64_t, 3> vol_shape,
                                   float DSD, float DSO, cudaTextureObject_t tex, float accuracy,
                                   std::uint64_t start_proj) {
     const auto idx_u = threadIdx.x + blockIdx.x * blockDim.x;
@@ -55,7 +54,7 @@ __global__ void kernel_forward_3d(device_span_3d<T> sinogram, Vec<std::uint64_t,
 
     // The detector point this thread is working on
     // const auto det_point = uv_origin + idx_u * delta_u + idx_v * delta_v;
-    Vec<float, 3> det_point;
+    vec<float, 3> det_point;
     det_point.x() = uv_origin.x() + idx_u * delta_u.x() + idx_v * delta_v.x();
     det_point.y() = uv_origin.y() + idx_u * delta_u.y() + idx_v * delta_v.y();
     det_point.z() = uv_origin.z() + idx_u * delta_u.z() + idx_v * delta_v.z();
@@ -68,8 +67,8 @@ __global__ void kernel_forward_3d(device_span_3d<T> sinogram, Vec<std::uint64_t,
     // clean this up (i.e. interect with AABB of volume)
     const auto nsamples = static_cast<std::int64_t>(::ceil(__fdividef(norm(dir), accuracy)));
 
-    const Vec<float, 3> boxmin{-1, -1, -1};
-    const Vec<float, 3> boxmax{vol_shape[0] + 1, vol_shape[1] + 1, vol_shape[2] + 1};
+    const vec<float, 3> boxmin{-1, -1, -1};
+    const vec<float, 3> boxmax{vol_shape[0] + 1, vol_shape[1] + 1, vol_shape[2] + 1};
     auto [hit, tmin, tmax] = intersection(boxmin, boxmax, source, dir);
 
     if (!hit) {
@@ -81,7 +80,7 @@ __global__ void kernel_forward_3d(device_span_3d<T> sinogram, Vec<std::uint64_t,
     const auto nsteps = static_cast<int>(ceilf((tmax - tmin) * nsamples));
     const auto step_length = (tmax - tmin) / nsteps;
 
-    Vec<float, 3> t;
+    vec<float, 3> t;
     float accumulator = 0;
 
     // TODO: i should start at a min t value, which is certainly not 0!
@@ -111,26 +110,26 @@ void setup_constants(device_volume<T> vol, device_measurement<U> sino, std::uint
 
     const auto nangles = sino.nangles();
 
-    std::vector<Vec<float, 3>> host_uv_origins;
-    std::vector<Vec<float, 3>> host_deltas_us;
-    std::vector<Vec<float, 3>> host_delta_vs;
-    std::vector<Vec<float, 3>> host_sources;
+    std::vector<vec<float, 3>> host_uv_origins;
+    std::vector<vec<float, 3>> host_deltas_us;
+    std::vector<vec<float, 3>> host_delta_vs;
+    std::vector<vec<float, 3>> host_sources;
 
     // distance object to detector
     const auto DOD = DSD - DSO;
     for (int i = proj_idx; i < proj_idx + num_proj; ++i) {
-        Vec<float, 3> init_source({0, 0, -DSO});
+        vec<float, 3> init_source({0, 0, -DSO});
 
         // Assume detector origin is at the bottom left corner, i.e. detector point (0, 0)
-        Vec<float, 3> init_det_origin{
+        vec<float, 3> init_det_origin{
             -det_spacing[0] * (det_shape[0] / 2.f) + det_spacing[0] * 0.5f, // u
             -det_spacing[1] * (det_shape[1] / 2.f) + det_spacing[1] * 0.5f, // v
             0.f};
 
         // detector point (1,0)
-        Vec<float, 3> init_delta_u = init_det_origin + Vec<float, 3>{det_spacing[0], 0.f, 0.f};
+        vec<float, 3> init_delta_u = init_det_origin + vec<float, 3>{det_spacing[0], 0.f, 0.f};
         // detector point (0, 1)
-        Vec<float, 3> init_delta_v = init_det_origin + Vec<float, 3>{0.f, det_spacing[1], 0.f};
+        vec<float, 3> init_delta_v = init_det_origin + vec<float, 3>{0.f, det_spacing[1], 0.f};
 
         // Apply geometry transformation, such that volume origin coincidence with world origin,
         // the volume voxels are unit size, for all projections, the image stays the same
@@ -195,19 +194,19 @@ void setup_constants(device_volume<T> vol, device_measurement<U> sino, std::uint
 
     // upload uv_origin, delta_u, delta_v, sources
     gpuErrchk(cudaMemcpyToSymbol(kernel::dev_uv_origins, host_uv_origins.data(),
-                                 sizeof(curad::Vec<float, 3>) * host_uv_origins.size(), 0,
+                                 sizeof(curad::vec<float, 3>) * host_uv_origins.size(), 0,
                                  cudaMemcpyDefault));
 
     gpuErrchk(cudaMemcpyToSymbol(kernel::dev_delta_us, host_deltas_us.data(),
-                                 sizeof(curad::Vec<float, 3>) * host_deltas_us.size(), 0,
+                                 sizeof(curad::vec<float, 3>) * host_deltas_us.size(), 0,
                                  cudaMemcpyDefault));
 
     gpuErrchk(cudaMemcpyToSymbol(kernel::dev_delta_vs, host_delta_vs.data(),
-                                 sizeof(curad::Vec<float, 3>) * host_delta_vs.size(), 0,
+                                 sizeof(curad::vec<float, 3>) * host_delta_vs.size(), 0,
                                  cudaMemcpyDefault));
 
     gpuErrchk(cudaMemcpyToSymbol(kernel::dev_sources, host_sources.data(),
-                                 sizeof(curad::Vec<float, 3>) * host_sources.size(), 0,
+                                 sizeof(curad::vec<float, 3>) * host_sources.size(), 0,
                                  cudaMemcpyDefault));
 
     gpuErrchk(cudaPeekAtLastError());

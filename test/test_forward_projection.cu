@@ -13,6 +13,7 @@
 #include <thrust/sequence.h>
 
 #include "show.hpp"
+#include "read.hpp"
 
 TEST_CASE("forward_projection_3d") {
     auto [data, width, height, depth, ignore1, ignore2, ignore3] = curad::easy::read("phantom.txt");
@@ -34,14 +35,14 @@ TEST_CASE("forward_projection_3d") {
     thrust::device_vector<float> sinogram(det_width * det_height * nangles, 0);
     auto sinogram_ptr = thrust::raw_pointer_cast(sinogram.data());
 
-    const auto det_shape = curad::Vec<std::uint64_t, 2>{det_width, det_height};
+    const auto det_shape = curad::vec<std::uint64_t, 2>{det_width, det_height};
 
-    const auto vol_shape = curad::Vec<std::uint64_t, 3>{width, height, depth};
+    const auto vol_shape = curad::vec<std::uint64_t, 3>{width, height, depth};
 
-    const auto vol_spacing = curad::Vec<float, 3>{1, 1, 1};
+    const auto vol_spacing = curad::vec<float, 3>{1, 1, 1};
     const auto vol_size = vol_shape * vol_spacing;
 
-    const auto vol_offset = curad::Vec<float, 3>{0, 0, 0};
+    const auto vol_offset = curad::vec<float, 3>{0, 0, 0};
 
     const float DSD = width * 10;
     const float DSO = DSD * 0.7;
@@ -100,12 +101,12 @@ TEST_CASE("forward_projection_2d") {
     const auto det_shape = det_width;
     const float det_spacing = 1;
 
-    const auto vol_shape = curad::Vec<std::uint64_t, 2>{width, height};
+    const auto vol_shape = curad::vec<std::uint64_t, 2>{width, height};
 
-    const auto vol_spacing = curad::Vec<float, 2>{1, 1};
+    const auto vol_spacing = curad::vec<float, 2>{1, 1};
     const auto vol_size = vol_shape * vol_spacing;
 
-    const auto vol_offset = curad::Vec<float, 2>{0, 0};
+    const auto vol_offset = curad::vec<float, 2>{0, 0};
 
     const float DSD = width * 100;
     const float DSO = DSD * 0.95;
