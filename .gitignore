@@ -1,6 +1,7 @@
 .idea/
 .vscode/
 .ipynb_checkpoints/
+.cache/
 
 intermediates/
 
@@ -17,3 +18,5 @@ benchmarks/**/*.ipynb
 *.pyc
 *.ncu-rep
 venv/
+
+compile_commands.json
