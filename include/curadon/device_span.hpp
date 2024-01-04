@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "curadon/math/vector.hpp"
 #include "curadon/span.hpp"
 
@@ -155,6 +157,30 @@ class device_measurement {
     static constexpr int Dim = 3;
     static constexpr int DetectorDim = 2;
 
+    device_measurement(T *data, Vec<std::uint64_t, Dim> shape)
+        : device_measurement(data, shape, Vec<float, DetectorDim>::ones()) {}
+
+    device_measurement(T *data, Vec<std::uint64_t, Dim> shape, Vec<float, DetectorDim> spacing)
+        : device_measurement(data, shape, Vec<float, DetectorDim>::ones(),
+                             Vec<float, DetectorDim>::zeros()) {}
+
+    device_measurement(T *data, Vec<std::uint64_t, Dim> shape, Vec<float, DetectorDim> spacing,
+                       Vec<float, DetectorDim> offset)
+        : data_(data, shape)
+        , spacing_(spacing)
+        , offset_(offset)
+        , extent_(detector_shape() * this->spacing())
+        , nangles_(shape[0])
+        , DSD(0)
+        , DSO(0)
+        , COR(0)
+        , phi_(nangles(), 0)
+        , theta_(nangles(), 0)
+        , psi_(nangles(), 0)
+        , pitch_(0)
+        , roll_(0)
+        , yaw_(0) {}
+
     device_measurement(T *data, Vec<std::uint64_t, DetectorDim> shape, float DSD, float DSO,
                        std::vector<float> phi)
         : device_measurement(data, shape, Vec<float, DetectorDim>::ones(), DSD, DSO, phi) {}
@@ -177,8 +203,8 @@ class device_measurement {
         , DSO(DSO)
         , COR(0)
         , phi_(phi)
-        , theta_()
-        , psi_()
+        , theta_(nangles(), 0)
+        , psi_(nangles(), 0)
         , pitch_(0)
         , roll_(0)
         , yaw_(0) {}
@@ -213,13 +239,21 @@ class device_measurement {
 
     float distance_object_to_detector() const { return DSD - DSO; }
 
+    float center_of_rotation_correction() const { return COR; }
+
     span<float> angles() { return span<float>(phi_.data(), phi_.size()); }
 
     span<float> phi() { return span<float>(phi_.data(), phi_.size()); }
 
+    float phi(std::uint64_t idx) { return phi_[idx]; }
+
     span<float> theta() { return span<float>(theta_.data(), theta_.size()); }
 
+    float theta(std::uint64_t idx) { return theta_[idx]; }
+
     span<float> psi() { return span<float>(psi_.data(), psi_.size()); }
+
+    float psi(std::uint64_t idx) { return psi_[idx]; }
 
     float pitch() const { return pitch_; }
 
@@ -233,6 +267,67 @@ class device_measurement {
         Vec<std::uint64_t, Dim> new_shape{shape()[0], shape()[1], count};
         auto ptr = device_data() + offset * data_.strides()[2];
         return device_span_3d<T>(ptr, new_shape);
+    }
+
+    // Builder pattern to set many variables:
+    device_measurement<T> &set_spacing(Vec<float, DetectorDim> new_spacing) {
+        spacing_ = new_spacing;
+        return *this;
+    }
+
+    device_measurement<T> &set_extent(Vec<float, DetectorDim> new_extent) {
+        extent_ = new_extent;
+        return *this;
+    }
+
+    device_measurement<T> &set_offset(Vec<float, DetectorDim> new_offset) {
+        offset_ = new_offset;
+        return *this;
+    }
+
+    device_measurement<T> &set_distance_source_to_detector(float new_DSD) {
+        DSD = new_DSD;
+        return *this;
+    }
+
+    device_measurement<T> &set_distance_source_to_object(float new_DSO) {
+        DSO = new_DSO;
+        return *this;
+    }
+
+    device_measurement<T> &set_center_of_rotation_correction(float new_COR) {
+        COR = new_COR;
+        return *this;
+    }
+
+    device_measurement<T> &set_angles(std::vector<float> new_angles) {
+        std::vector<float> zeros(new_angles.size(), 0);
+        return set_angles(new_angles, zeros, zeros);
+    }
+
+    device_measurement<T> &set_angles(std::vector<float> new_phi, std::vector<float> new_theta,
+                                      std::vector<float> new_psi) {
+        // TODO: check that all have the same size!
+        phi_ = new_phi;
+        theta_ = new_theta;
+        psi_ = new_psi;
+        nangles_ = new_phi.size();
+        return *this;
+    }
+
+    device_measurement<T> &set_pitch(float new_pitch) {
+        pitch_ = new_pitch;
+        return *this;
+    }
+
+    device_measurement<T> &set_roll(float new_roll) {
+        roll_ = new_roll;
+        return *this;
+    }
+
+    device_measurement<T> &set_yaw(float new_yaw) {
+        yaw_ = new_yaw;
+        return *this;
     }
 
   private:
@@ -256,8 +351,8 @@ class device_measurement {
     // euler angles in radian, TODO: change to device_uvector? But we only need it in the
     // pre-computing phase, so let's think about this a little more
     std::vector<float> phi_;
-    std::vector<float> theta_; // TODO: enable in constructor
-    std::vector<float> psi_;   // TODO: enable in constructor
+    std::vector<float> theta_;
+    std::vector<float> psi_;
 
     // Detector rotation in radians, TODO: maybe make this a vector?
     float pitch_;
