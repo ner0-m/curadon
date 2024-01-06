@@ -27,8 +27,12 @@ def test_forward(show=False):
     curadon.forward_3d(volume, vol_shape, vol_spacing, vol_offset, sinogram,
                        angles, det_shape, det_spacing, det_offset, det_rotation, DSO, DSD, COR)
 
+    backproj = torch.zeros_like(volume)
+    curadon.backward_3d(backproj, vol_shape, vol_spacing, vol_offset, sinogram,
+                        angles, det_shape, det_spacing, det_offset, det_rotation, DSO, DSD, COR)
+
     if show:
-        plt.imshow(sinogram[180, :, :].cpu().numpy(), cmap="gray")
+        plt.imshow(backproj[32, :, :].cpu().numpy(), cmap="gray")
         plt.show()
 
 

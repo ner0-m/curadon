@@ -1,8 +1,9 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 
+#include "curadon/backward.hpp"
+#include "curadon/detail/backward_2d.hpp"
 #include "curadon/device_span.hpp"
-#include "curadon/forward.hpp"
 #include "curadon/math/vector.hpp"
 #include "curadon/types.hpp"
 
@@ -10,7 +11,7 @@
 
 namespace nb = nanobind;
 
-void forward_3d_cuda(
+void backward_3d_cuda(
     nb::ndarray<curad::f32, nb::shape<nb::any, nb::any, nb::any>, nb::device::cuda, nb::c_contig>
         volume,
     nb::ndarray<curad::u64, nb::shape<3>, nb::device::cpu> vol_shape,
@@ -50,33 +51,10 @@ void forward_3d_cuda(
     sino_span.set_roll(det_rotation(1));
     sino_span.set_yaw(det_rotation(2));
 
-    // printf("Volume data pointer : %p\n", volume.data());
-    // printf("Volume dimension : %zu\n", volume.ndim());
-    // printf("vol_shape: %zu, %zu, %zu\n", curad_vol_shape[0], curad_vol_shape[1],
-    //        curad_vol_shape[2]);
-    // printf("vol_spacing: %f, %f, %f\n", curad_vol_spacing[0], curad_vol_spacing[1],
-    //        curad_vol_spacing[2]);
-    // printf("vol_offset: %f, %f, %f\n", curad_vol_offset[0], curad_vol_offset[1],
-    //        curad_vol_offset[2]);
-    //
-    // printf("Sinogram data pointer : %p\n", sinogram.data());
-    // printf("Sinogram dimension : %zu\n", sinogram.ndim());
-    // std::cout << "det_shape: " << det_shape(0) << ", " << det_shape(1) << "\n";
-    // std::cout << "det_shape: " << curad_det_shape[0] << ", " << curad_det_shape[1] << ", "
-    //           << angles.size() << "\n";
-    // std::cout << "det_spacing: " << curad_det_spacing[0] << ", " << curad_det_spacing[1] << "\n";
-    // std::cout << "det_offset: " << curad_det_offset[0] << ", " << curad_det_offset[1] << "\n";
-    // std::cout << "det_rotation: " << det_rotation(0) << ", " << det_rotation(1) << ", "
-    //           << det_rotation(2) << "\n";
-    //
-    // printf("DSO: %f\n", DSO);
-    // printf("DSD: %f\n", DSD);
-    // printf("COR: %f\n", COR);
-
-    curad::fp::forward_3d(vol_span, sino_span);
+    curad::bp::backproject_3d(vol_span, sino_span);
 }
 
-void forward_2d_cuda(
+void backward_2d_cuda(
     nb::ndarray<curad::f32, nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> vol,
     nb::ndarray<curad::u64, nb::shape<2>, nb::device::cpu> vol_shape,
     nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> vol_spacing,
@@ -94,7 +72,11 @@ void forward_2d_cuda(
 
     std::vector<curad::f32> cpu_angles(angles.data(), angles.data() + angles.size());
 
-    curad::fp::forward_2d(vol.data(), curad_vol_shape, curad_vol_extent, curad_vol_spacing,
-                          curad_vol_offset, sino.data(), det_shape, det_spacing, cpu_angles, DSD,
-                          DSO);
+    // TODO: Why do I need the source really here?,
+    const auto source = curad::vec2f{0, -DSO};
+
+    // TODO: make this call the same as forward_2d (both order and types of arguments)
+    // TODO: Remove vol_extent, just compute it your-freaking-self :D
+    curad::bp::backproject_2d(vol.data(), curad_vol_shape, curad_vol_spacing, curad_vol_offset,
+                              curad_vol_extent, sino.data(), det_shape, DSD, DSO, source, cpu_angles);
 }

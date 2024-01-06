@@ -65,7 +65,8 @@ nanobind_add_module(
   NOMINSIZE
   # Source code goes here
   src/bind.cpp
-  src/forward.cu)
+  src/forward.cu
+  src/backward.cu)
 
 target_include_directories(
   curadon_ext PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
