@@ -5,6 +5,8 @@
 #include "curadon/math/vector.hpp"
 #include "curadon/types.hpp"
 
+#include <tuple>
+
 namespace curad::fp::kernel {
 template <i64 Dim>
 __host__ __device__ std::tuple<bool, float, float>
@@ -21,6 +23,6 @@ intersection(const vec<float, Dim> &boxmin, const vec<float, Dim> &boxmax,
         tmax = fmaxf(fminf(t1, tmax), fminf(t2, tmax));
     }
 
-    return {tmin <= tmax, tmin, tmax};
+    return std::make_tuple(tmin <= tmax, tmin, tmax);
 }
 } // namespace curad::fp::kernel
