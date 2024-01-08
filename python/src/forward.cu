@@ -18,7 +18,7 @@ void forward_3d_cuda(
     nb::ndarray<curad::f32, nb::shape<3>, nb::device::cpu> vol_offset,
     nb::ndarray<curad::f32, nb::shape<nb::any, nb::any, nb::any>, nb::device::cuda, nb::c_contig>
         sinogram,
-    nb::ndarray<curad::u64, nb::shape<nb::any>, nb::device::cpu> angles,
+    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> angles,
     nb::ndarray<curad::u64, nb::shape<2>, nb::device::cpu> det_shape,
     nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> det_spacing,
     nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> det_offset,
@@ -82,7 +82,7 @@ void forward_2d_cuda(
     nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> vol_spacing,
     nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> vol_offset,
     nb::ndarray<curad::f32, nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
-    nb::ndarray<curad::u64, nb::shape<nb::any>, nb::device::cpu> angles, curad::u64 det_shape,
+    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> angles, curad::u64 det_shape,
     curad::f32 det_spacing, curad::f32 det_offset, curad::f32 det_rotation, curad::f32 DSO,
     curad::f32 DSD, curad::f32 COR) {
 
