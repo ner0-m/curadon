@@ -1,6 +1,6 @@
 #pragma once
 
-#include "curadon/math/vector.hpp"
+#include "curadon/detail/vec.hpp"
 
 namespace curad::geometry {
 template <class T>

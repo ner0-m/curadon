@@ -2,7 +2,7 @@
 
 #include <limits>
 
-#include "curadon/math/vector.hpp"
+#include "curadon/detail/vec.hpp"
 #include "curadon/types.hpp"
 
 #include <tuple>

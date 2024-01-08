@@ -4,7 +4,7 @@
 
 #include "curadon/detail/device_span.hpp"
 #include "curadon/detail/span.hpp"
-#include "curadon/math/vector.hpp"
+#include "curadon/detail/vec.hpp"
 #include "curadon/types.hpp"
 
 namespace curad {

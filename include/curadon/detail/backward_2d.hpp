@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "curadon/detail/error.h"
-#include "curadon/math/vector.hpp"
+#include "curadon/detail/vec.hpp"
 #include "curadon/rotation.h"
 #include "curadon/utils.hpp"
 

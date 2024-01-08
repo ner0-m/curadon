@@ -5,7 +5,7 @@
 #include "curadon/detail/intersection.h"
 #include "curadon/detail/measurement_3d.hpp"
 #include "curadon/detail/texture.hpp"
-#include "curadon/math/vector.hpp"
+#include "curadon/detail/vec.hpp"
 #include "curadon/rotation.h"
 #include "curadon/utils.hpp"
 

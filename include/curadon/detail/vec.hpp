@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "curadon/math/math.hpp"
+#include "curadon/detail/math.hpp"
 #include "curadon/types.hpp"
 
 namespace curad {

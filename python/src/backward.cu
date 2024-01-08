@@ -3,7 +3,7 @@
 
 #include "curadon/backward.hpp"
 #include "curadon/image.hpp"
-#include "curadon/math/vector.hpp"
+#include "curadon/detail/vec.hpp"
 #include "curadon/measurement.hpp"
 #include "curadon/types.hpp"
 

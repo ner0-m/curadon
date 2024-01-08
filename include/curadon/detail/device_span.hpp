@@ -1,7 +1,7 @@
 #pragma once
 
 #include "curadon/types.hpp"
-#include "curadon/math/vector.hpp"
+#include "curadon/detail/vec.hpp"
 
 namespace curad {
 
