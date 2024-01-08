@@ -4,10 +4,10 @@
 #include "curadon/detail/image_3d.hpp"
 #include "curadon/detail/intersection.h"
 #include "curadon/detail/measurement_3d.hpp"
+#include "curadon/detail/rotation.hpp"
 #include "curadon/detail/texture.hpp"
+#include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
-#include "curadon/rotation.h"
-#include "curadon/utils.hpp"
 
 #include <cmath>
 #include <cstdio>

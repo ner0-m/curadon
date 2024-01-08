@@ -3,10 +3,10 @@
 #include "curadon/detail/error.h"
 #include "curadon/detail/image_3d.hpp"
 #include "curadon/detail/measurement_3d.hpp"
+#include "curadon/detail/rotation.hpp"
 #include "curadon/detail/texture.hpp"
+#include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
-#include "curadon/rotation.h"
-#include "curadon/utils.hpp"
 
 #include <cstdint>
 #include <cuda_runtime_api.h>

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "curadon/detail/error.h"
+#include "curadon/detail/rotation.hpp"
+#include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
-#include "curadon/rotation.h"
-#include "curadon/utils.hpp"
 
 #include "curadon/detail/intersection.h"
 
