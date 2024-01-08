@@ -1,6 +1,10 @@
 #pragma once
 
-#include "curadon/device_span.hpp"
+#include "curadon/detail/device_span.hpp"
+#include "curadon/detail/error.h"
+
+#include <cstring>
+#include <cuda_runtime.h>
 
 namespace curad::detail {
 inline cudaArray_t allocate_cuarray(std::size_t width, std::size_t height, std::size_t depth) {

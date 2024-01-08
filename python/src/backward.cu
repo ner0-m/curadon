@@ -2,9 +2,9 @@
 #include <nanobind/ndarray.h>
 
 #include "curadon/backward.hpp"
-#include "curadon/detail/backward_2d.hpp"
-#include "curadon/device_span.hpp"
+#include "curadon/image.hpp"
 #include "curadon/math/vector.hpp"
+#include "curadon/measurement.hpp"
 #include "curadon/types.hpp"
 
 #include <vector>

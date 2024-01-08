@@ -1,9 +1,10 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 
-#include "curadon/device_span.hpp"
 #include "curadon/forward.hpp"
+#include "curadon/image.hpp"
 #include "curadon/math/vector.hpp"
+#include "curadon/measurement.hpp"
 #include "curadon/types.hpp"
 
 #include <vector>
@@ -93,6 +94,24 @@ void forward_2d_cuda(
     curad::vec2f curad_vol_extent = curad_vol_shape * curad_vol_spacing;
 
     std::vector<curad::f32> cpu_angles(angles.data(), angles.data() + angles.size());
+
+    std::cout << "vol_shape: " << curad_vol_shape[0] << ", " << curad_vol_shape[1] << "\n";
+    std::cout << "vol_extent: " << curad_vol_extent[0] << ", " << curad_vol_extent[1] << "\n";
+    std::cout << "vol_spacing: " << curad_vol_spacing[0] << ", " << curad_vol_spacing[1] << "\n";
+    std::cout << "vol_offset: " << curad_vol_offset[0] << ", " << curad_vol_offset[1] << "\n";
+    std::cout << "sino_shape: " << angles.size() << "\n";
+    std::cout << "det_shape: " << det_shape << "\n";
+    std::cout << "det_spacing: " << det_spacing << "\n";
+    std::cout << "det_offset: " << det_offset << "\n";
+    std::cout << "det_rotation: " << det_rotation << "\n";
+    std::cout << "DSO: " << DSO << "\n";
+    std::cout << "DSD: " << DSD << "\n";
+    std::cout << "vol stride: " << vol.stride(0) << ", " << vol.stride(1) << "\n";
+    std::cout << "sino stride: " << sino.stride(0) << ", " << sino.stride(1) << "\n";
+
+    std::cout << "angles: " << cpu_angles[0] << ", " << cpu_angles[1] << ", " << cpu_angles[2]
+              << " ... " << cpu_angles[cpu_angles.size() - 2] << ", "
+              << cpu_angles[cpu_angles.size() - 1] << "\n";
 
     curad::fp::forward_2d(vol.data(), curad_vol_shape, curad_vol_extent, curad_vol_spacing,
                           curad_vol_offset, sino.data(), det_shape, det_spacing, cpu_angles, DSD,
