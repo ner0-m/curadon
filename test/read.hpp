@@ -4,7 +4,7 @@
 #include <fstream>
 #include <vector>
 
-#include "curadon/math/vector.hpp"
+#include "curadon/detail/vec.hpp"
 
 namespace curad {
 namespace easy {

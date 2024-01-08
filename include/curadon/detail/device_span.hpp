@@ -159,7 +159,7 @@ class device_span_3d : device_span_nd<T, 3> {
 };
 
 template <class T>
-class device_span_2d : device_span_nd<T, 3> {
+class device_span_2d : device_span_nd<T, 2> {
     using B = device_span_nd<T, 2>;
 
   public:
@@ -172,10 +172,10 @@ class device_span_2d : device_span_nd<T, 3> {
     using reference = typename B::reference;
     using const_reference = typename B::const_reference;
 
-    device_span_2d(pointer data, vec<size_type, 3> shape)
+    device_span_2d(pointer data, vec<size_type, 2> shape)
         : B(data, shape) {}
 
-    device_span_2d(pointer data, vec<size_type, 3> shape, vec<strides_type, 3> strides)
+    device_span_2d(pointer data, vec<size_type, 2> shape, vec<strides_type, 2> strides)
         : B(data, shape, strides) {}
 
     using B::device_data;

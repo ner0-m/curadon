@@ -80,7 +80,7 @@ TEST_CASE("forward_projection_2d") {
     thrust::sequence(angles.begin(), angles.end(), 0.f, step);
 
     // const std::size_t det_width = static_cast<std::size_t>(std::ceil(width * std::sqrt(2)));
-    const std::size_t det_width = width;
+    const std::size_t det_width = static_cast<int>(width * std::sqrt(2));
     thrust::device_vector<float> sinogram(det_width * nangles, 0);
     auto sinogram_ptr = thrust::raw_pointer_cast(sinogram.data());
 
@@ -94,11 +94,26 @@ TEST_CASE("forward_projection_2d") {
 
     const auto vol_offset = curad::vec<float, 2>{0, 0};
 
-    const float DSD = width * 100;
-    const float DSO = DSD * 0.95;
+    const float DSD = 1280;
+    const float DSO = 1408;
 
-    curad::fp::forward_2d(volume_ptr, vol_shape, vol_size, vol_spacing, vol_offset, sinogram_ptr,
-                          det_shape, det_spacing, angles, DSD, DSO);
+    std::cout << "vol_shape: " << vol_shape[0] << ", " << vol_shape[1] << "\n";
+    std::cout << "vol_extent: " << vol_size[0] << ", " << vol_size[1] << "\n";
+    std::cout << "vol_spacing: " << vol_spacing[0] << ", " << vol_spacing[1] << "\n";
+    std::cout << "vol_offset: " << vol_offset[0] << ", " << vol_offset[1] << "\n";
+    std::cout << "sino_shape: " << angles.size() << "\n";
+    std::cout << "det_shape: " << det_shape << "\n";
+    std::cout << "det_spacing: " << det_spacing << "\n";
+    std::cout << "DSO: " << DSO << "\n";
+    std::cout << "DSD: " << DSD << "\n";
+
+    curad::image_2d vol_span(volume_ptr, vol_shape, vol_spacing, vol_offset);
+    curad::measurement_2d sino_span(sinogram_ptr, det_shape, angles.size(), det_spacing);
+    sino_span.set_angles(angles);
+    sino_span.set_distance_source_to_object(DSO);
+    sino_span.set_distance_source_to_detector(DSD);
+
+    curad::fp::forward_2d(vol_span, sino_span);
 
     thrust::host_vector<float> host_sino = sinogram;
 

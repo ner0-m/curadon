@@ -70,15 +70,18 @@ void backward_2d_cuda(
     curad::vec2f curad_vol_offset{vol_offset(1), vol_offset(0)};
     curad::vec2f curad_vol_extent = curad_vol_shape * curad_vol_spacing;
 
-    std::vector<curad::f32> cpu_angles(angles.data(), angles.data() + angles.size());
-
     curad::image_2d<curad::f32> vol_span(vol.data(), curad_vol_shape, curad_vol_spacing,
                                          curad_vol_offset);
 
-    // TODO: Why do I need the source really here?,
-    const auto source = curad::vec2f{0, -DSO};
+    std::vector<curad::f32> cpu_angles(angles.data(), angles.data() + angles.size());
 
-    // TODO: make this call the same as forward_2d (both order and types of arguments)
-    // TODO: Remove vol_extent, just compute it your-freaking-self :D
-    curad::bp::backproject_2d(vol_span, sino.data(), det_shape, DSD, DSO, source, cpu_angles);
+    curad::measurement_2d<curad::f32> sino_span(sino.data(), det_shape, det_spacing, det_offset);
+    sino_span.set_angles(cpu_angles);
+    sino_span.set_angles(cpu_angles);
+    sino_span.set_distance_source_to_object(DSO);
+    sino_span.set_distance_source_to_detector(DSD);
+    sino_span.set_center_of_rotation_correction(COR);
+    sino_span.set_pitch(det_rotation);
+
+    curad::bp::backproject_2d(vol_span, sino_span);
 }

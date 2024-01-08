@@ -7,6 +7,7 @@
 #include "show.hpp"
 
 #include "curadon/backward.hpp"
+#include "curadon/measurement.hpp"
 #include "curadon/types.hpp"
 
 TEST_CASE("backward_3d") {
@@ -75,7 +76,6 @@ TEST_CASE("backward_2d") {
 
     auto vol_spacing = curad::vec2f{1, 1};
     auto vol_offset = curad::vec2f{0, 0};
-    auto vol_extent = vol_shape * vol_spacing;
 
     const auto source = curad::vec2f{0, -DSO};
 
@@ -83,8 +83,13 @@ TEST_CASE("backward_2d") {
     std::cout << "width: " << width << std::endl;
     std::cout << "nangles: " << nangles << std::endl;
 
-    curad::bp::backproject_2d(volume_ptr, vol_shape, vol_spacing, vol_offset, vol_extent, sino_ptr,
-                              det_shape, DSD, DSO, source, angles);
+    curad::image_2d vol_span(volume_ptr, vol_shape, vol_spacing, vol_offset);
+    curad::measurement_2d sino_span(sino_ptr, det_shape, angles.size());
+    sino_span.set_angles(angles);
+    sino_span.set_distance_source_to_object(DSO);
+    sino_span.set_distance_source_to_detector(DSD);
+
+    curad::bp::backproject_2d(vol_span, sino_span);
 
     // Copy result back to host
     thrust::host_vector<float> vol_host = volume;

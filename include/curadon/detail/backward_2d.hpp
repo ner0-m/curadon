@@ -7,6 +7,7 @@
 
 #include "curadon/detail/error.h"
 #include "curadon/detail/image_2d.hpp"
+#include "curadon/detail/measurement_2d.hpp"
 #include "curadon/detail/rotation.hpp"
 #include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
@@ -96,13 +97,12 @@ __global__ void backward_2d(T *volume, i64 vol_stride, vec2u vol_shape, cudaText
     }
 }
 
-void setup_constants(vec2f vol_extent, vec2f vol_spacing, vec2f vol_offset,
-                     std::vector<float> angles, u64 start_proj, u64 num_projections) {
+void setup_constants(vec2f vol_extent, vec2f vol_spacing, vec2f vol_offset, span<f32> angles) {
     std::vector<curad::vec2f> vol_origins;
     std::vector<curad::vec2f> delta_xs;
     std::vector<curad::vec2f> delta_ys;
 
-    for (int i = start_proj; i < start_proj + num_projections; ++i) {
+    for (int i = 0; i < angles.size(); ++i) {
         // TODO: check what am I still missing to make this feature complete? Check with tigre
 
         auto init_vol_origin = -vol_extent / 2.f + vol_spacing / 2.f + vol_offset;
@@ -149,14 +149,19 @@ class Texture {
 };
 
 template <class T, class U>
-void backproject_2d(image_2d<T> volume, U *sino_ptr, u64 det_shape, f32 DSD, f32 DSO, vec2f source,
-                    std::vector<f32> angles) {
-    const auto nangles = angles.size();
-
+void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
     auto vol_shape = volume.shape();
     auto vol_extent = volume.extent();
     auto vol_spacing = volume.spacing();
     auto vol_offset = volume.offset();
+
+    auto sino_ptr = sino.device_data();
+    auto det_shape = sino.detector_shape();
+    auto DSD = sino.distance_source_to_detector();
+    auto DSO = sino.distance_source_to_object();
+    auto source = sino.source();
+    auto angles = sino.angles();
+    auto nangles = sino.nangles();
 
     // allocate cuarray with size of volume
     cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<f32>();
@@ -210,8 +215,8 @@ void backproject_2d(image_2d<T> volume, U *sino_ptr, u64 det_shape, f32 DSD, f32
 
         // kernel uses variables stored in __constant__ memory, e.g. volume origin, volume
         // deltas Compute them here and upload them
-        kernel::setup_constants(vol_extent, vol_spacing, vol_offset, angles, proj_idx,
-                                num_projections);
+        kernel::setup_constants(vol_extent, vol_spacing, vol_offset,
+                                angles.subspan(proj_idx, num_projections));
 
         int divx = 16;
         int divy = kernel::num_voxels_per_thread_2d;

@@ -1,7 +1,9 @@
 #pragma once
 
+#include "curadon/detail/device_span.hpp"
 #include "curadon/detail/error.h"
 #include "curadon/detail/image_2d.hpp"
+#include "curadon/detail/measurement_2d.hpp"
 #include "curadon/detail/rotation.hpp"
 #include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
@@ -26,8 +28,8 @@ static constexpr u64 num_projections_per_kernel_2d = 128;
 
 /// tex is the volume
 template <class T>
-__global__ void kernel_forward_2d(T *sinogram, vec<u64, 2> vol_shape, f32 DSD, f32 DSO,
-                                  u64 det_shape, i64 total_projections, cudaTextureObject_t tex,
+__global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_shape, f32 DSD,
+                                  f32 DSO, i64 total_projections, cudaTextureObject_t tex,
                                   f32 accuracy,
                                   // These should be moved to constant memory
                                   vec2f *uv_origins, vec2f *delta_us, vec2f *sources) {
@@ -36,12 +38,10 @@ __global__ void kernel_forward_2d(T *sinogram, vec<u64, 2> vol_shape, f32 DSD, f
     // TODO: make this less strict, enable this kernel to be called multiple times
     const auto proj_number = threadIdx.y + blockIdx.y * blockDim.y;
 
+    const auto det_shape = sinogram.shape()[0];
+
     if (idx_u >= det_shape || proj_number >= total_projections)
         return;
-
-    const i64 stride_u = 1;
-    const i64 stride_proj = det_shape;
-    const i64 idx = idx_u * stride_u + proj_number * stride_proj;
 
     const auto uv_origin = uv_origins[proj_number];
     const auto delta_u = delta_us[proj_number];
@@ -56,9 +56,7 @@ __global__ void kernel_forward_2d(T *sinogram, vec<u64, 2> vol_shape, f32 DSD, f
     // direction from source to detector point
     auto dir = det_point - source;
 
-    // how many steps to take along dir should we walk
-    // TODO: This walks from the source to the  detector all the way, this is hyper inefficient,
-    // clean this up (i.e. interect with AABB of volume)
+    // how many steps to take along dir should we walk?
     auto dir_len = norm(dir);
     const auto nsamples = static_cast<i64>(::ceil(__fdividef(dir_len, accuracy)));
 
@@ -87,14 +85,18 @@ __global__ void kernel_forward_2d(T *sinogram, vec<u64, 2> vol_shape, f32 DSD, f
     }
 
     // TODO: dir_len * vol_spacing
-    sinogram[idx] = accumulator * dir_len;
+    sinogram(idx_u, proj_number) = accumulator * dir_len;
 }
 } // namespace kernel
 
 template <class T, class U>
-void forward_2d(image_2d<T> volume, U *sinogram, u64 det_shape, f32 det_spacing,
-                std::vector<f32> angles, f32 DSD, f32 DSO) {
-    std::size_t nangles = angles.size();
+void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram) {
+    auto det_shape = sinogram.detector_shape();
+    auto det_spacing = sinogram.spacing();
+    auto angles = sinogram.angles();
+    auto nangles = sinogram.nangles();
+    auto DSD = sinogram.distance_source_to_detector();
+    auto DSO = sinogram.distance_source_to_object();
 
     auto vol_shape = volume.shape();
     auto vol_extent = volume.extent();
@@ -216,10 +218,10 @@ void forward_2d(image_2d<T> volume, U *sinogram, u64 det_shape, f32 det_spacing,
         dim3 block(div_u, kernel::num_projections_per_block_2d);
 
         // Move sinogram ptr ahead
-        auto sinogram_ptr = sinogram + proj_idx * det_shape;
-        kernel::kernel_forward_2d<<<grid, block>>>(sinogram_ptr, vol_shape, DSD, DSO, det_shape,
-                                                   nangles, tex, accuracy, uv_origins, deltas_us,
-                                                   sources);
+        // auto sinogram_ptr = sinogram + proj_idx * det_shape;
+        auto sino_slice = sinogram.slice(proj_idx, num_projections);
+        kernel::kernel_forward_2d<<<grid, block>>>(sino_slice, vol_shape, DSD, DSO, nangles, tex,
+                                                   accuracy, uv_origins, deltas_us, sources);
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
     }
