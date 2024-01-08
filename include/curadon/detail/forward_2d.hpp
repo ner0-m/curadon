@@ -20,8 +20,8 @@ namespace curad::fp {
 namespace kernel {
 
 static constexpr u64 pixels_u_per_block_2d = 8;
-static constexpr u64 num_projections_per_block_2d = 1;
-static constexpr u64 num_projections_per_kernel_2d = 1;
+static constexpr u64 num_projections_per_block_2d = 8;
+static constexpr u64 num_projections_per_kernel_2d = 128;
 
 /// tex is the volume
 template <class T>
