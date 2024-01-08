@@ -1,6 +1,7 @@
 #pragma once
 
 #include "curadon/detail/error.h"
+#include "curadon/detail/image_2d.hpp"
 #include "curadon/detail/rotation.hpp"
 #include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
@@ -91,11 +92,14 @@ __global__ void kernel_forward_2d(T *sinogram, vec<u64, 2> vol_shape, f32 DSD, f
 } // namespace kernel
 
 template <class T, class U>
-void forward_2d(T *volume, vec<u64, 2> vol_shape, vec2f vol_size, vec2f vol_spacing,
-                vec2f vol_offset, U *sinogram, u64 det_shape, f32 det_spacing,
+void forward_2d(image_2d<T> volume, U *sinogram, u64 det_shape, f32 det_spacing,
                 std::vector<f32> angles, f32 DSD, f32 DSO) {
-
     std::size_t nangles = angles.size();
+
+    auto vol_shape = volume.shape();
+    auto vol_extent = volume.extent();
+    auto vol_spacing = volume.spacing();
+    auto vol_offset = volume.offset();
 
     // TODO: make this configurable
     const f32 accuracy = 1.f;
@@ -110,8 +114,8 @@ void forward_2d(T *volume, vec<u64, 2> vol_shape, vec2f vol_size, vec2f vol_spac
     gpuErrchk(cudaPeekAtLastError());
 
     const auto size = vol_shape[0] * sizeof(f32);
-    gpuErrchk(
-        cudaMemcpy2DToArray(array, 0, 0, volume, size, size, vol_shape[1], cudaMemcpyDefault));
+    gpuErrchk(cudaMemcpy2DToArray(array, 0, 0, volume.device_data(), size, size, vol_shape[1],
+                                  cudaMemcpyDefault));
     gpuErrchk(cudaStreamSynchronize(0));
     gpuErrchk(cudaPeekAtLastError());
 
@@ -177,7 +181,7 @@ void forward_2d(T *volume, vec<u64, 2> vol_shape, vec2f vol_size, vec2f vol_spac
             auto source = ::curad::geometry::rotate(init_source, angle);
 
             // 4) move everything such that volume origin coincides with world origin
-            const auto translation = vol_size / 2.f - vol_spacing / 2;
+            const auto translation = vol_extent / 2.f - vol_spacing / 2;
             det_origin = det_origin - vol_offset + translation;
             delta_u = delta_u - vol_offset + translation;
             source = source - vol_offset + translation;

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "curadon/detail/error.h"
+#include "curadon/detail/image_2d.hpp"
 #include "curadon/detail/rotation.hpp"
 #include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
@@ -148,10 +149,14 @@ class Texture {
 };
 
 template <class T, class U>
-void backproject_2d(T *volume_ptr, vec2u vol_shape, vec2f vol_spacing, vec2f vol_offset,
-                    vec2f vol_extent, U *sino_ptr, u64 det_shape, f32 DSD, f32 DSO, vec2f source,
+void backproject_2d(image_2d<T> volume, U *sino_ptr, u64 det_shape, f32 DSD, f32 DSO, vec2f source,
                     std::vector<f32> angles) {
     const auto nangles = angles.size();
+
+    auto vol_shape = volume.shape();
+    auto vol_extent = volume.extent();
+    auto vol_spacing = volume.spacing();
+    auto vol_offset = volume.offset();
 
     // allocate cuarray with size of volume
     cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<f32>();
@@ -194,7 +199,7 @@ void backproject_2d(T *volume_ptr, vec2u vol_shape, vec2f vol_spacing, vec2f vol
         auto cur_proj_ptr = sino_ptr + offset;
         const auto size = det_shape * sizeof(U);
         cudaMemcpy3DParms mParams = {0};
-        mParams.srcPtr = make_cudaPitchedPtr(cur_proj_ptr, det_shape * sizeof(U), det_shape, 1);
+        mParams.srcPtr = make_cudaPitchedPtr(cur_proj_ptr, size, det_shape, 1);
         mParams.kind = cudaMemcpyHostToDevice;
 
         // Important! non-zero height required for memcpy to do anything
@@ -216,9 +221,9 @@ void backproject_2d(T *volume_ptr, vec2u vol_shape, vec2f vol_spacing, vec2f vol
         int block_x = utils::round_up_division(vol_shape[0], divx);
         int block_y = utils::round_up_division(vol_shape[1], divy);
         dim3 num_blocks(block_x, block_y);
-        kernel::backward_2d<<<num_blocks, threads_per_block>>>(volume_ptr, vol_shape[0], vol_shape,
-                                                               tex.handle(), det_shape, proj_idx,
-                                                               nangles, source, DSD, DSO);
+        kernel::backward_2d<<<num_blocks, threads_per_block>>>(volume.device_data(), vol_shape[0],
+                                                               vol_shape, tex.handle(), det_shape,
+                                                               proj_idx, nangles, source, DSD, DSO);
 
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());

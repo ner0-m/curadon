@@ -2,8 +2,8 @@
 #include <nanobind/ndarray.h>
 
 #include "curadon/backward.hpp"
-#include "curadon/image.hpp"
 #include "curadon/detail/vec.hpp"
+#include "curadon/image.hpp"
 #include "curadon/measurement.hpp"
 #include "curadon/types.hpp"
 
@@ -72,12 +72,13 @@ void backward_2d_cuda(
 
     std::vector<curad::f32> cpu_angles(angles.data(), angles.data() + angles.size());
 
+    curad::image_2d<curad::f32> vol_span(vol.data(), curad_vol_shape, curad_vol_spacing,
+                                         curad_vol_offset);
+
     // TODO: Why do I need the source really here?,
     const auto source = curad::vec2f{0, -DSO};
 
     // TODO: make this call the same as forward_2d (both order and types of arguments)
     // TODO: Remove vol_extent, just compute it your-freaking-self :D
-    curad::bp::backproject_2d(vol.data(), curad_vol_shape, curad_vol_spacing, curad_vol_offset,
-                              curad_vol_extent, sino.data(), det_shape, DSD, DSO, source,
-                              cpu_angles);
+    curad::bp::backproject_2d(vol_span, sino.data(), det_shape, DSD, DSO, source, cpu_angles);
 }

@@ -1,9 +1,10 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 
+#include "curadon/detail/image_2d.hpp"
+#include "curadon/detail/vec.hpp"
 #include "curadon/forward.hpp"
 #include "curadon/image.hpp"
-#include "curadon/detail/vec.hpp"
 #include "curadon/measurement.hpp"
 #include "curadon/types.hpp"
 
@@ -113,7 +114,8 @@ void forward_2d_cuda(
               << " ... " << cpu_angles[cpu_angles.size() - 2] << ", "
               << cpu_angles[cpu_angles.size() - 1] << "\n";
 
-    curad::fp::forward_2d(vol.data(), curad_vol_shape, curad_vol_extent, curad_vol_spacing,
-                          curad_vol_offset, sino.data(), det_shape, det_spacing, cpu_angles, DSD,
-                          DSO);
+    curad::image_2d<curad::f32> vol_span(vol.data(), curad_vol_shape, curad_vol_spacing,
+                                         curad_vol_offset);
+
+    curad::fp::forward_2d(vol_span, sino.data(), det_shape, det_spacing, cpu_angles, DSD, DSO);
 }
