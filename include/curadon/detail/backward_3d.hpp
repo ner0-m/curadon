@@ -220,6 +220,7 @@ void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
     }
 
     cudaDestroyTextureObject(tex);
+    cudaFreeArray(array_cu);
 }
 
 } // namespace curad::bp

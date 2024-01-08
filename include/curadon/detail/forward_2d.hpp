@@ -137,6 +137,7 @@ void forward_2d(T *volume, vec<u64, 2> vol_shape, vec2f vol_size, vec2f vol_spac
 
     const int num_kernel_calls =
         utils::round_up_division(nangles, kernel::num_projections_per_kernel_2d);
+
     for (int i = 0; i < num_kernel_calls; ++i) {
         const auto proj_idx = i * kernel::num_projections_per_kernel_2d;
         const auto num_projections_left = nangles - proj_idx;
@@ -219,6 +220,7 @@ void forward_2d(T *volume, vec<u64, 2> vol_shape, vec2f vol_size, vec2f vol_spac
         gpuErrchk(cudaDeviceSynchronize());
     }
 
+    cudaFreeArray(array);
     cudaDestroyTextureObject(tex);
 }
 

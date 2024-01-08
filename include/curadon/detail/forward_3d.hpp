@@ -267,6 +267,9 @@ void forward_3d(device_volume<T> vol, device_measurement<U> sino) {
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
     }
+
+    cudaDestroyTextureObject(tex);
+    cudaFreeArray(array);
 }
 
 } // namespace curad::fp

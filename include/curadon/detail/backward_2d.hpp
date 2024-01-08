@@ -223,5 +223,7 @@ void backproject_2d(T *volume_ptr, vec2u vol_shape, vec2f vol_spacing, vec2f vol
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
     }
+
+    cudaFreeArray(array);
 }
 } // namespace curad::bp
