@@ -119,32 +119,50 @@ void setup_constants(device_volume<T> vol, device_measurement<U> sino, u64 start
     std::vector<curad::vec3f> delta_ys;
     std::vector<curad::vec3f> delta_zs;
 
+    auto fn = [&](auto p, auto i) {
+        // 1. Rotate point according to current projection geometry
+        p = curad::geometry::rotate_yzy(p, sino.phi(i), sino.theta(i), sino.psi(i));
+
+        // 2. Apply detector offset
+        p[0] += sino.offset()[0];
+        p[1] += sino.offset()[1];
+
+        // 3. Apply detector rotation
+        // 3.1 Move point to origin (only z is necessary)
+        p[2] -= sino.distance_object_to_detector();
+        // 3.2 Apply roll, pitch, yaw
+        p = curad::geometry::rotate_roll_pitch_yaw(p, sino.roll(), sino.pitch(), sino.yaw());
+        // 3.3 Move point back
+        p[2] += sino.distance_object_to_detector();
+
+        return p;
+    };
+
     for (int i = start_proj; i < start_proj + num_projections; ++i) {
         // TODO: check what am I still missing to make this feature complete? Check with tigre
 
+        // 1. Create initial point (in this case image(0, 0, 0))
         curad::vec3f init_vol_origin = -vol_extent / 2.f + vol_spacing / 2.f + vol_offset;
-        auto vol_origin =
-            curad::geometry::rotate_yzy(init_vol_origin, sino.phi(i), sino.theta(i), sino.psi(i));
+
+        auto vol_origin = fn(init_vol_origin, i);
+
+        // Store it
         vol_origins.push_back(vol_origin);
 
-        curad::vec3f init_delta;
-        init_delta = init_vol_origin;
+        curad::vec3f init_delta = init_vol_origin;
         init_delta[0] += vol_spacing[0];
-        init_delta =
-            curad::geometry::rotate_yzy(init_delta, sino.phi(i), sino.theta(i), sino.psi(i));
-        delta_xs.push_back(init_delta - vol_origin);
+        auto delta_x = fn(init_delta, i);
+        delta_xs.push_back(delta_x - vol_origin);
 
         init_delta = init_vol_origin;
         init_delta[1] += vol_spacing[1];
-        init_delta =
-            curad::geometry::rotate_yzy(init_delta, sino.phi(i), sino.theta(i), sino.psi(i));
-        delta_ys.push_back(init_delta - vol_origin);
+        auto delta_y = fn(init_delta, i);
+        delta_ys.push_back(delta_y - vol_origin);
 
         init_delta = init_vol_origin;
         init_delta[2] += vol_spacing[2];
-        init_delta =
-            curad::geometry::rotate_yzy(init_delta, sino.phi(i), sino.theta(i), sino.psi(i));
-        delta_zs.push_back(init_delta - vol_origin);
+        auto delta_z = fn(init_delta, i);
+        delta_zs.push_back(delta_z - vol_origin);
     }
 
     cudaMemcpyToSymbol(dev_vol_origin, vol_origins.data(),
@@ -197,7 +215,17 @@ void backproject_3d(device_volume<T> volume, device_measurement<U> sinogram) {
 
         auto vol_span = volume.kernel_span();
 
-        const auto source = sinogram.source();
+        auto source = sinogram.source();
+
+        // Apply roll, pitch, yaw of detector to source
+        // 1. Move back, such that detector is at origin
+        source[2] -= sinogram.distance_object_to_detector();
+        // 2. Apply roll, pitch, yaw
+        source = geometry::rotate_roll_pitch_yaw(source, sinogram.roll(), sinogram.pitch(),
+                                                 sinogram.yaw());
+        // 3. Move source to original position
+        source[2] += sinogram.distance_object_to_detector();
+
         const auto DSD = sinogram.distance_source_to_detector();
         const auto DSO = sinogram.distance_source_to_object();
         const auto det_shape = sinogram.detector_shape();
