@@ -113,7 +113,9 @@ class device_measurement {
 
     f32 yaw() const { return yaw_; }
 
-    vec<f32, Dim> source() const { return {0, 0, -distance_source_to_object()}; }
+    vec<f32, Dim> source() const {
+        return {-offset()[0], -offset()[1], -distance_source_to_object()};
+    }
 
     device_span_3d<T> slice(u64 offset, u64 count = 1) {
         vec<u64, Dim> new_shape{shape()[0], shape()[1], count};
