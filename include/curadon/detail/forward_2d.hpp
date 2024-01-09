@@ -14,25 +14,27 @@
 #include <cstdio>
 #include <type_traits>
 
-#include <thrust/device_vector.h>
-#include <thrust/host_vector.h>
-
 #include <cuda_runtime_api.h>
+
+// TODO: remove
+#include <numeric>
 
 namespace curad::fp {
 namespace kernel {
 
 static constexpr u64 pixels_u_per_block_2d = 8;
 static constexpr u64 num_projections_per_block_2d = 8;
-static constexpr u64 num_projections_per_kernel_2d = 128;
+static constexpr u64 num_projections_per_kernel_2d = 360;
+
+__constant__ vec2f dev_u_origins_2d[num_projections_per_kernel_2d];
+__constant__ vec2f dev_delta_us_2d[num_projections_per_kernel_2d];
+__constant__ vec2f dev_sources_2d[num_projections_per_kernel_2d];
 
 /// tex is the volume
 template <class T>
 __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_shape, f32 DSD,
                                   f32 DSO, i64 total_projections, cudaTextureObject_t tex,
-                                  f32 accuracy,
-                                  // These should be moved to constant memory
-                                  vec2f *uv_origins, vec2f *delta_us, vec2f *sources) {
+                                  f32 accuracy) {
     const auto idx_u = threadIdx.x + blockIdx.x * blockDim.x;
 
     // TODO: make this less strict, enable this kernel to be called multiple times
@@ -43,9 +45,9 @@ __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_sh
     if (idx_u >= det_shape || proj_number >= total_projections)
         return;
 
-    const auto uv_origin = uv_origins[proj_number];
-    const auto delta_u = delta_us[proj_number];
-    const auto source = sources[proj_number];
+    const auto uv_origin = dev_u_origins_2d[proj_number];
+    const auto delta_u = dev_delta_us_2d[proj_number];
+    const auto source = dev_sources_2d[proj_number];
 
     // The detector point this thread is working on
     // const auto det_point = uv_origin + idx_u * delta_u + idx_v * delta_v;
@@ -78,14 +80,90 @@ __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_sh
     vec2f p;
     f32 accumulator = 0;
 
+    // if (accumulator > 1000.) {
+    //     printf("idx_u %i, proj_number %i, accumulator %f, tmin %f tmax %f step_length %f nsteps
+    //     %i\n", idx_u, proj_number, accumulator, tmin, tmax, step_length, nsteps);
+    // }
+
+    int counter = 0;
     for (f32 t = tmin; t <= tmax; t += step_length) {
         p = dir * t + source;
         const auto partial = tex2D<f32>(tex, p.x(), p.y());
         accumulator += partial;
+        ++counter;
     }
 
-    // TODO: dir_len * vol_spacing
-    sinogram(idx_u, proj_number) = accumulator * dir_len;
+    // if (proj_number == 0) {
+    //     printf("idx_u %i accumulator %f\n", idx_u, accumulator);
+    // }
+
+    // TODO: accumulator * dir_len * vol_spacing
+    sinogram(idx_u, proj_number) = accumulator;
+}
+
+void setup_constants(span<f32> angles, vec2f init_source, u64 det_shape, f32 det_spacing, f32 DOD,
+                     vec2f vol_extent, vec2f vol_spacing, vec2f vol_offset) {
+    std::vector<vec2f> u_origins(angles.size());
+    std::vector<vec2f> delta_us(angles.size());
+    std::vector<vec2f> sources(angles.size());
+
+    for (int i = 0; i < angles.size(); ++i) {
+        auto angle = angles[i];
+
+        // Assume detector origin is at the bottom left corner, i.e. detector point (0, 0)
+        vec2f init_det_origin{-det_spacing * (det_shape / 2.f) + det_spacing * 0.5f, 0.f};
+
+        // detector point (1)
+        vec2f init_delta_u = init_det_origin + vec2f{det_spacing, 0.f};
+
+        // Apply geometry transformation, such that volume origin coincidence with world origin,
+        // the volume voxels are unit size, for all projections, the image stays the same
+
+        // 1) apply roll, pitch, yaw of detector
+        // TODO
+
+        // 2) translate to real detector position
+        init_det_origin[1] += DOD;
+        init_delta_u[1] += DOD;
+
+        // 3) Rotate according to current position clockwise
+        auto det_origin = ::curad::geometry::rotate(init_det_origin, -angle);
+        auto delta_u = ::curad::geometry::rotate(init_delta_u, -angle);
+        auto source = ::curad::geometry::rotate(init_source, -angle);
+
+        // 4) move everything such that volume origin coincides with world origin
+        const auto translation = vol_extent / 2.f - vol_spacing / 2;
+        det_origin = det_origin - vol_offset + translation;
+        delta_u = delta_u - vol_offset + translation;
+        source = source - vol_offset + translation;
+
+        // 5) scale such that volume voxels are unit size
+        det_origin = det_origin / vol_spacing;
+        delta_u = delta_u / vol_spacing;
+        source = source / vol_spacing;
+
+        // 6) Apply center of rotation correction
+        // TODO
+
+        // 7) store in host vector
+        u_origins[i] = det_origin;
+        delta_us[i] = delta_u - det_origin;
+        sources[i] = source;
+    }
+
+    gpuErrchk(cudaMemcpyToSymbol(dev_u_origins_2d, u_origins.data(),
+                                 sizeof(curad::vec2f) * kernel::num_projections_per_kernel_2d, 0,
+                                 cudaMemcpyDefault));
+    gpuErrchk(cudaPeekAtLastError());
+    gpuErrchk(cudaMemcpyToSymbol(dev_delta_us_2d, delta_us.data(),
+                                 sizeof(curad::vec2f) * kernel::num_projections_per_kernel_2d, 0,
+                                 cudaMemcpyDefault));
+    gpuErrchk(cudaPeekAtLastError());
+    gpuErrchk(cudaMemcpyToSymbol(dev_sources_2d, sources.data(),
+                                 sizeof(curad::vec2f) * kernel::num_projections_per_kernel_2d, 0,
+                                 cudaMemcpyDefault));
+    gpuErrchk(cudaPeekAtLastError());
+    gpuErrchk(cudaDeviceSynchronize());
 }
 } // namespace kernel
 
@@ -150,66 +228,10 @@ void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram) {
         const auto num_projections =
             std::min<int>(kernel::num_projections_per_kernel_2d, num_projections_left);
 
-        // TODO: compute uv origins, delta_u, delta_v, sources
-        thrust::host_vector<vec2f> host_uv_origins(num_projections);
-        thrust::host_vector<vec2f> host_deltas_us(num_projections);
-        thrust::host_vector<vec2f> host_sources(num_projections);
-
-        // distance object to detector
-        const auto DOD = DSD - DSO;
-        for (int i = 0; i < num_projections; ++i) {
-            auto angle = angles[proj_idx + i];
-            vec2f init_source({0, -DSO});
-
-            // Assume detector origin is at the bottom left corner, i.e. detector point (0, 0)
-            vec2f init_det_origin{-det_spacing * (det_shape / 2.f) + det_spacing * 0.5f, 0.f};
-
-            // detector point (1)
-            vec2f init_delta_u = init_det_origin + vec2f{det_spacing, 0.f};
-
-            // Apply geometry transformation, such that volume origin coincidence with world origin,
-            // the volume voxels are unit size, for all projections, the image stays the same
-
-            // 1) apply roll, pitch, yaw of detector
-            // TODO
-
-            // 2) translate to real detector position
-            init_det_origin[1] += DOD;
-            init_delta_u[1] += DOD;
-
-            // 3) Rotate according to current position
-            auto det_origin = ::curad::geometry::rotate(init_det_origin, angle);
-            auto delta_u = ::curad::geometry::rotate(init_delta_u, angle);
-            auto source = ::curad::geometry::rotate(init_source, angle);
-
-            // 4) move everything such that volume origin coincides with world origin
-            const auto translation = vol_extent / 2.f - vol_spacing / 2;
-            det_origin = det_origin - vol_offset + translation;
-            delta_u = delta_u - vol_offset + translation;
-            source = source - vol_offset + translation;
-
-            // 5) scale such that volume voxels are unit size
-            det_origin = det_origin / vol_spacing;
-            delta_u = delta_u / vol_spacing;
-            source = source / vol_spacing;
-
-            // 6) Apply center of rotation correction
-            // TODO
-
-            // 7) store in host vector
-            host_uv_origins[i] = det_origin;
-            host_deltas_us[i] = delta_u - det_origin;
-            host_sources[i] = source;
-        }
-
-        // upload uv_origin, delta_u, delta_v, sources
-        thrust::device_vector<vec2f> dev_uv_origins = host_uv_origins;
-        thrust::device_vector<vec2f> dev_deltas_us = host_deltas_us;
-        thrust::device_vector<vec2f> dev_sources = host_sources;
-
-        auto uv_origins = thrust::raw_pointer_cast(dev_uv_origins.data());
-        auto deltas_us = thrust::raw_pointer_cast(dev_deltas_us.data());
-        auto sources = thrust::raw_pointer_cast(dev_sources.data());
+        auto source = sinogram.source();
+        kernel::setup_constants(angles.subspan(proj_idx, num_projections), source, det_shape,
+                                det_spacing, sinogram.distance_object_to_detector(), vol_extent,
+                                vol_spacing, vol_offset);
 
         const u64 div_u = kernel::pixels_u_per_block_2d;
 
@@ -218,10 +240,9 @@ void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram) {
         dim3 block(div_u, kernel::num_projections_per_block_2d);
 
         // Move sinogram ptr ahead
-        // auto sinogram_ptr = sinogram + proj_idx * det_shape;
         auto sino_slice = sinogram.slice(proj_idx, num_projections);
         kernel::kernel_forward_2d<<<grid, block>>>(sino_slice, vol_shape, DSD, DSO, nangles, tex,
-                                                   accuracy, uv_origins, deltas_us, sources);
+                                                   accuracy);
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
     }
