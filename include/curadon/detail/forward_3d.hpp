@@ -27,10 +27,10 @@ static constexpr u64 projections_per_block_3d = 8;
 
 static constexpr i64 num_projects_per_kernel_3d = 128;
 
-__constant__ vec3f dev_uv_origins[num_projects_per_kernel_3d];
-__constant__ vec3f dev_delta_us[num_projects_per_kernel_3d];
-__constant__ vec3f dev_delta_vs[num_projects_per_kernel_3d];
-__constant__ vec3f dev_sources[num_projects_per_kernel_3d];
+__constant__ vec3f dev_u_origins_3d[num_projects_per_kernel_3d];
+__constant__ vec3f dev_delta_us_3d[num_projects_per_kernel_3d];
+__constant__ vec3f dev_delta_vs_3d[num_projects_per_kernel_3d];
+__constant__ vec3f dev_sources_3d[num_projects_per_kernel_3d];
 
 /// tex is the volume
 template <class T>
@@ -47,10 +47,10 @@ __global__ void kernel_forward_3d(device_span_3d<T> sinogram, vec3u vol_shape, f
         return;
     }
 
-    const auto uv_origin = dev_uv_origins[local_proj_idx];
-    const auto delta_u = dev_delta_us[local_proj_idx];
-    const auto delta_v = dev_delta_vs[local_proj_idx];
-    const auto source = dev_sources[local_proj_idx];
+    const auto uv_origin = dev_u_origins_3d[local_proj_idx];
+    const auto delta_u = dev_delta_us_3d[local_proj_idx];
+    const auto delta_v = dev_delta_vs_3d[local_proj_idx];
+    const auto source = dev_sources_3d[local_proj_idx];
 
     // The detector point this thread is working on
     // const auto det_point = uv_origin + idx_u * delta_u + idx_v * delta_v;
@@ -191,19 +191,19 @@ void setup_constants(device_volume<T> vol, device_measurement<U> sino, u64 proj_
     }
 
     // upload uv_origin, delta_u, delta_v, sources
-    gpuErrchk(cudaMemcpyToSymbol(kernel::dev_uv_origins, host_uv_origins.data(),
+    gpuErrchk(cudaMemcpyToSymbol(kernel::dev_u_origins_3d, host_uv_origins.data(),
                                  sizeof(curad::vec3f) * host_uv_origins.size(), 0,
                                  cudaMemcpyDefault));
 
-    gpuErrchk(cudaMemcpyToSymbol(kernel::dev_delta_us, host_deltas_us.data(),
+    gpuErrchk(cudaMemcpyToSymbol(kernel::dev_delta_us_3d, host_deltas_us.data(),
                                  sizeof(curad::vec3f) * host_deltas_us.size(), 0,
                                  cudaMemcpyDefault));
 
-    gpuErrchk(cudaMemcpyToSymbol(kernel::dev_delta_vs, host_delta_vs.data(),
+    gpuErrchk(cudaMemcpyToSymbol(kernel::dev_delta_vs_3d, host_delta_vs.data(),
                                  sizeof(curad::vec3f) * host_delta_vs.size(), 0,
                                  cudaMemcpyDefault));
 
-    gpuErrchk(cudaMemcpyToSymbol(kernel::dev_sources, host_sources.data(),
+    gpuErrchk(cudaMemcpyToSymbol(kernel::dev_sources_3d, host_sources.data(),
                                  sizeof(curad::vec3f) * host_sources.size(), 0, cudaMemcpyDefault));
 
     gpuErrchk(cudaPeekAtLastError());
