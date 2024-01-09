@@ -94,6 +94,7 @@ void forward_2d_cuda(
     curad::vec2f curad_vol_offset{vol_offset(1), vol_offset(0)};
     curad::vec2f curad_vol_extent = curad_vol_shape * curad_vol_spacing;
 
+    std::vector<curad::f32> cpu_angles(angles.data(), angles.data() + angles.size());
 
     // std::cout << "vol_shape: " << curad_vol_shape[0] << ", " << curad_vol_shape[1] << "\n";
     // std::cout << "vol_extent: " << curad_vol_extent[0] << ", " << curad_vol_extent[1] << "\n";
@@ -116,8 +117,7 @@ void forward_2d_cuda(
     curad::image_2d<curad::f32> vol_span(vol.data(), curad_vol_shape, curad_vol_spacing,
                                          curad_vol_offset);
 
-    std::vector<curad::f32> cpu_angles(angles.data(), angles.data() + angles.size());
-    curad::measurement_2d<curad::f32> sino_span(sino.data(), det_shape, det_spacing, det_offset);
+    curad::measurement_2d<curad::f32> sino_span(sino.data(), det_shape, angles.size(), det_spacing, det_offset);
     sino_span.set_angles(cpu_angles);
     sino_span.set_distance_source_to_object(DSO);
     sino_span.set_distance_source_to_detector(DSD);
