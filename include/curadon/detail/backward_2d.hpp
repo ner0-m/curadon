@@ -194,7 +194,6 @@ void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
         utils::round_up_division(nangles, kernel::num_projections_per_kernel_2d);
     for (int i = 0; i < num_kernel_calls; ++i) {
         const auto proj_idx = i * kernel::num_projections_per_kernel_2d;
-        // std::cout << "kernel call: " << proj_idx << " / " << nangles << "\n";
         const auto num_projections_left = nangles - proj_idx;
         const auto num_projections =
             std::min<int>(kernel::num_projections_per_kernel_2d, num_projections_left);
@@ -208,7 +207,7 @@ void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
         mParams.kind = cudaMemcpyHostToDevice;
 
         // Important! non-zero height required for memcpy to do anything
-        mParams.extent = make_cudaExtent(det_shape, 1, kernel::num_projections_per_kernel_2d);
+        mParams.extent = make_cudaExtent(det_shape, 1, num_projections);
         mParams.dstArray = array;
         gpuErrchk(cudaMemcpy3D(&mParams));
         gpuErrchk(cudaPeekAtLastError());
