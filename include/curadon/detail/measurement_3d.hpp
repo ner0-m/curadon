@@ -81,6 +81,8 @@ class device_measurement {
 
     vec<f32, DetectorDim> offset() const { return offset_; }
 
+    vec<i64, Dim> strides() const { return data_.strides(); }
+
     device_span_3d<T> kernel_span() { return data_; }
 
     u64 nangles() const { return nangles_; }
