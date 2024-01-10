@@ -38,6 +38,8 @@ class device_volume_nd {
 
     vec<f32, Dim> offset() const { return offset_; }
 
+    auto strides() const { return data_.strides(); }
+
     template <i64 D = Dim, typename std::enable_if_t<D == 3, int> = 0>
     device_span_3d<T> kernel_span() {
         return device_span_3d<T>(data_.device_data(), data_.shape(), data_.strides());

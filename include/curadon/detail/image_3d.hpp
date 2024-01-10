@@ -28,6 +28,7 @@ class device_volume : private detail::device_volume_nd<T, 3> {
     using B::nbytes;
     using B::ndim;
     using B::offset;
+    using B::strides;
     using B::shape;
     using B::size;
     using B::spacing;
