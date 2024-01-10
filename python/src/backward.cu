@@ -19,7 +19,9 @@ void backward_3d_cuda(
     nb::ndarray<curad::f32, nb::shape<3>, nb::device::cpu> vol_offset,
     nb::ndarray<curad::f32, nb::shape<nb::any, nb::any, nb::any>, nb::device::cuda, nb::c_contig>
         sinogram,
-    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> angles,
+    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> phi,
+    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> theta,
+    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> psi,
     nb::ndarray<curad::u64, nb::shape<2>, nb::device::cpu> det_shape,
     nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> det_spacing,
     nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> det_offset,
@@ -35,15 +37,17 @@ void backward_3d_cuda(
                                          curad_vol_offset);
 
     // never forgetti, python calls (v, u), we do (u, v)
-    curad::vec3u curad_det_shape{det_shape(1), det_shape(0), angles.size()};
+    curad::vec3u curad_det_shape{det_shape(1), det_shape(0), phi.size()};
     curad::vec2f curad_det_spacing{det_spacing(1), det_spacing(0)};
     curad::vec2f curad_det_offset{det_offset(1), det_offset(0)};
 
-    std::vector<float> cpu_angles(angles.data(), angles.data() + angles.size());
+    std::vector<float> cpu_psi(phi.data(), phi.data() + phi.size());
+    std::vector<float> cpu_theta(theta.data(), theta.data() + theta.size());
+    std::vector<float> cpu_phi(psi.data(), psi.data() + psi.size());
 
     curad::device_measurement<float> sino_span(sinogram.data(), curad_det_shape, curad_det_spacing,
                                                curad_det_offset);
-    sino_span.set_angles(cpu_angles);
+    sino_span.set_angles(cpu_psi, cpu_theta, cpu_phi);
     sino_span.set_distance_source_to_detector(DSD);
     sino_span.set_distance_source_to_object(DSO);
     sino_span.set_center_of_rotation_correction(COR);

@@ -20,7 +20,9 @@ void forward_3d_cuda(
     nb::ndarray<curad::f32, nb::shape<3>, nb::device::cpu> vol_offset,
     nb::ndarray<curad::f32, nb::shape<nb::any, nb::any, nb::any>, nb::device::cuda, nb::c_contig>
         sinogram,
-    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> angles,
+    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> phi,
+    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> theta,
+    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> psi,
     nb::ndarray<curad::u64, nb::shape<2>, nb::device::cpu> det_shape,
     nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> det_spacing,
     nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> det_offset,
@@ -36,15 +38,17 @@ void forward_3d_cuda(
                                          curad_vol_offset);
 
     // never forgetti, python calls (v, u), we do (u, v)
-    curad::vec3u curad_det_shape{det_shape(1), det_shape(0), angles.size()};
+    curad::vec3u curad_det_shape{det_shape(1), det_shape(0), phi.size()};
     curad::vec2f curad_det_spacing{det_spacing(1), det_spacing(0)};
     curad::vec2f curad_det_offset{det_offset(1), det_offset(0)};
 
-    std::vector<float> cpu_angles(angles.data(), angles.data() + angles.size());
+    std::vector<float> cpu_psi(phi.data(), phi.data() + phi.size());
+    std::vector<float> cpu_theta(theta.data(), theta.data() + theta.size());
+    std::vector<float> cpu_phi(psi.data(), psi.data() + psi.size());
 
     curad::device_measurement<float> sino_span(sinogram.data(), curad_det_shape, curad_det_spacing,
                                                curad_det_offset);
-    sino_span.set_angles(cpu_angles);
+    sino_span.set_angles(cpu_psi, cpu_theta, cpu_phi);
     sino_span.set_distance_source_to_detector(DSD);
     sino_span.set_distance_source_to_object(DSO);
     sino_span.set_center_of_rotation_correction(COR);
@@ -54,6 +58,8 @@ void forward_3d_cuda(
 
     // printf("Volume data pointer : %p\n", volume.data());
     // printf("Volume dimension : %zu\n", volume.ndim());
+    // std::cout << "Volume strides: " << volume.stride(2) << ", " << volume.stride(1) << ", " << volume.stride(0) << "\n";
+    // std::cout << "Volume strides: " << vol_span.strides()[0] << ", " << vol_span.strides()[1] << ", " << vol_span.strides()[2] << "\n";
     // printf("vol_shape: %zu, %zu, %zu\n", curad_vol_shape[0], curad_vol_shape[1],
     //        curad_vol_shape[2]);
     // printf("vol_spacing: %f, %f, %f\n", curad_vol_spacing[0], curad_vol_spacing[1],
@@ -63,6 +69,8 @@ void forward_3d_cuda(
     //
     // printf("Sinogram data pointer : %p\n", sinogram.data());
     // printf("Sinogram dimension : %zu\n", sinogram.ndim());
+    // std::cout << "Sinogram strides: " << sinogram.stride(2) << ", " << sinogram.stride(1) << ", " << sinogram.stride(0) << "\n";
+    // std::cout << "Sinogram strides: " << sino_span.strides()[0] << ", " << sino_span.strides()[1] << ", " << sino_span.strides()[2] << "\n";
     // std::cout << "det_shape: " << det_shape(0) << ", " << det_shape(1) << "\n";
     // std::cout << "det_shape: " << curad_det_shape[0] << ", " << curad_det_shape[1] << ", "
     //           << angles.size() << "\n";
@@ -100,7 +108,7 @@ void forward_2d_cuda(
     // std::cout << "vol_extent: " << curad_vol_extent[0] << ", " << curad_vol_extent[1] << "\n";
     // std::cout << "vol_spacing: " << curad_vol_spacing[0] << ", " << curad_vol_spacing[1] << "\n";
     // std::cout << "vol_offset: " << curad_vol_offset[0] << ", " << curad_vol_offset[1] << "\n";
-    // std::cout << "sino_shape: " << angles.size() << "\n";
+    // std::cout << "nangles: " << angles.size() << "\n";
     // std::cout << "det_shape: " << det_shape << "\n";
     // std::cout << "det_spacing: " << det_spacing << "\n";
     // std::cout << "det_offset: " << det_offset << "\n";
@@ -123,6 +131,8 @@ void forward_2d_cuda(
     sino_span.set_distance_source_to_detector(DSD);
     sino_span.set_center_of_rotation_correction(COR);
     sino_span.set_pitch(det_rotation);
+
+    // std::cout << "det_spacing: " << sino_span.spacing() << "\n";
 
     curad::fp::forward_2d(vol_span, sino_span);
 }
