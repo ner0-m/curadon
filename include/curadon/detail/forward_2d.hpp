@@ -69,6 +69,7 @@ __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_sh
     auto [hit, tmin, tmax] = intersection(boxmin, boxmax, source, dir);
 
     if (!hit) {
+        sinogram(idx_u, proj_number) = 0.f;
         return;
     }
 
@@ -80,22 +81,10 @@ __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_sh
     vec2f p;
     f32 accumulator = 0;
 
-    // if (accumulator > 1000.) {
-    //     printf("idx_u %i, proj_number %i, accumulator %f, tmin %f tmax %f step_length %f nsteps
-    //     %i\n", idx_u, proj_number, accumulator, tmin, tmax, step_length, nsteps);
-    // }
-
-    int counter = 0;
     for (f32 t = tmin; t <= tmax; t += step_length) {
         p = dir * t + source;
-        const auto partial = tex2D<f32>(tex, p.x(), p.y());
-        accumulator += partial;
-        ++counter;
+        accumulator += tex2D<f32>(tex, p.x(), p.y());
     }
-
-    // if (proj_number == 0) {
-    //     printf("idx_u %i accumulator %f\n", idx_u, accumulator);
-    // }
 
     // TODO: accumulator * dir_len * vol_spacing
     sinogram(idx_u, proj_number) = accumulator;
@@ -243,9 +232,9 @@ void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram) {
         auto sino_slice = sinogram.slice(proj_idx, num_projections);
         kernel::kernel_forward_2d<<<grid, block>>>(sino_slice, vol_shape, DSD, DSO, nangles, tex,
                                                    accuracy);
-        gpuErrchk(cudaPeekAtLastError());
-        gpuErrchk(cudaDeviceSynchronize());
     }
+    gpuErrchk(cudaPeekAtLastError());
+    gpuErrchk(cudaDeviceSynchronize());
 
     cudaFreeArray(array);
     cudaDestroyTextureObject(tex);
