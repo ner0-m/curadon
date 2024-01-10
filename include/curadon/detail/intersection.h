@@ -15,6 +15,7 @@ intersection(const vec<float, Dim> &boxmin, const vec<float, Dim> &boxmax,
     float tmin = std::numeric_limits<float>::min();
     float tmax = std::numeric_limits<float>::max();
 
+#pragma unroll
     for (int d = 0; d < Dim; ++d) {
         auto t1 = __fdividef(boxmin[d] - ro[d], rd[d]);
         auto t2 = __fdividef(boxmax[d] - ro[d], rd[d]);
