@@ -49,6 +49,7 @@ struct texture {
         // Specify texture object parameters
         cudaTextureDesc texDesc;
         memset(&texDesc, 0, sizeof(texDesc));
+
         texDesc.addressMode[0] = cudaAddressModeBorder;
         texDesc.addressMode[1] = cudaAddressModeBorder;
         texDesc.addressMode[2] = cudaAddressModeBorder;
@@ -58,6 +59,7 @@ struct texture {
 
         // Create texture object
         gpuErrchk(cudaCreateTextureObject(&texture_, &resDesc, &texDesc, NULL));
+        gpuErrchk(cudaPeekAtLastError());
     }
 
     texture(const texture &) = delete;
@@ -66,16 +68,18 @@ struct texture {
     // TODO: improve this, this should take an nd_span kind of thing
     void write(float *data) { this->write(data, config_.depth); }
 
-    void write(float *data, int depth) {
+    void write(float *data, u64 depth) {
         // if using a single channel use cudaMemcpy to copy data into array
         cudaMemcpy3DParms cpy_params = {0};
+
         cpy_params.srcPtr = make_cudaPitchedPtr(data, config_.width * sizeof(float), config_.width,
-                                                std::max(config_.height, 1ul));
+                                                std::max<u64>(config_.height, 1));
         cpy_params.dstArray = this->storage_;
 
-        cpy_params.extent = make_cudaExtent(config_.width, std::max(config_.height, 1ul), depth);
+        cpy_params.extent = make_cudaExtent(config_.width, std::max<u64>(config_.height, 1),
+                                            std::max<u64>(depth, 1));
 
-        cpy_params.kind = cudaMemcpyDeviceToDevice;
+        cpy_params.kind = cudaMemcpyDefault;
         gpuErrchk(cudaMemcpy3D(&cpy_params));
     }
 
