@@ -5,9 +5,9 @@
 #include "curadon/detail/image_2d.hpp"
 #include "curadon/detail/measurement_2d.hpp"
 #include "curadon/detail/rotation.hpp"
+#include "curadon/detail/texture_cache.hpp"
 #include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
-#include "curadon/detail/texture_cache.hpp"
 
 #include "curadon/detail/intersection.h"
 
@@ -24,14 +24,12 @@ namespace curad::fp {
 namespace kernel {
 
 static constexpr u64 pixels_u_per_block_2d = 8;
-static constexpr u64 num_projections_per_block_2d = 8;
 static constexpr u64 num_projections_per_kernel_2d = 360;
 
 __constant__ vec2f dev_u_origins_2d[num_projections_per_kernel_2d];
 __constant__ vec2f dev_delta_us_2d[num_projections_per_kernel_2d];
 __constant__ vec2f dev_sources_2d[num_projections_per_kernel_2d];
 
-/// tex is the volume
 template <class T>
 __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_shape, f32 DSD,
                                   f32 DSO, i64 total_projections, cudaTextureObject_t tex,
@@ -43,52 +41,48 @@ __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_sh
 
     const auto det_shape = sinogram.shape()[0];
 
-    if (idx_u >= det_shape || proj_number >= total_projections)
+    if (idx_u >= det_shape || proj_number >= total_projections) {
         return;
+    }
 
     const auto uv_origin = dev_u_origins_2d[proj_number];
     const auto delta_u = dev_delta_us_2d[proj_number];
     const auto source = dev_sources_2d[proj_number];
 
-    // The detector point this thread is working on
-    // const auto det_point = uv_origin + idx_u * delta_u + idx_v * delta_v;
-    vec2f det_point;
-    det_point.x() = uv_origin.x() + idx_u * delta_u.x();
-    det_point.y() = uv_origin.y() + idx_u * delta_u.y();
-
-    // direction from source to detector point
+    vec2f det_point = uv_origin + idx_u * delta_u;
     auto dir = det_point - source;
 
-    // how many steps to take along dir should we walk?
-    auto dir_len = norm(dir);
-    const auto nsamples = static_cast<i64>(::ceil(__fdividef(dir_len, accuracy)));
+    // Compute intersection with AABB, by construction of our method, the volume origin is at the
+    // origin, we increase the aabb just a touch due to the interpolation method
+    auto [tmin, tmax] = intersection_2d(vol_shape, source, dir);
 
-    dir /= dir_len;
-
-    const vec2f boxmin{-1, -1};
-    const vec2f boxmax{vol_shape[0] + 1, vol_shape[1] + 1};
-    auto [hit, tmin, tmax] = intersection(boxmin, boxmax, source, dir);
-
-    if (!hit) {
-        sinogram(idx_u, proj_number) = 0.f;
+    // we don't hit the aabb, so just write zeros and leave
+    if (tmin > tmax - 1e-6) {
+        sinogram(idx_u, proj_number) = 0;
         return;
     }
 
-    // tmin and tmax are both within [0, 1], hence, we compute how many of the nsamples are within
-    // this region and only walk that many samples
-    const auto nsteps = static_cast<int>(ceilf((tmax - tmin) / dir_len * nsamples));
-    const auto step_length = (tmax - tmin) / (f32)nsteps;
+    auto rs = source;
+    rs += tmin * dir;
+    // TODO: make this an operator on vector
+    dir.x() *= (tmax - tmin);
+    dir.y() *= (tmax - tmin);
 
-    vec2f p;
+    const int nsteps = __float2int_rn(fmaxf(fabs(dir.x()), fabs(dir.y())));
+
+    vec2f step_length;
+    step_length.x() = __fdividef(dir.x(), fmaxf(fabs(dir.x()), fabs(dir.y())));
+    step_length.y() = __fdividef(dir.y(), fmaxf(fabs(dir.x()), fabs(dir.y())));
+
     f32 accumulator = 0;
-
-    for (f32 t = tmin; t <= tmax; t += step_length) {
-        p = dir * t + source;
-        accumulator += tex2D<f32>(tex, p.x(), p.y());
+    for (int j = 0; j < nsteps; j++) {
+        accumulator += tex2D<f32>(tex, rs.x() + 0.5, rs.y() + 0.5);
+        rs += step_length;
     }
 
-    // TODO: accumulator * dir_len * vol_spacing
-    sinogram(idx_u, proj_number) = accumulator;
+    // TODO: multiply vx and vy by vol_spacing
+    const float intersection_length = hypot(step_length.x(), step_length.y());
+    sinogram(idx_u, proj_number) = accumulator * intersection_length;
 }
 
 void setup_constants(span<f32> angles, vec2f init_source, u64 det_shape, f32 det_spacing, f32 DOD,
@@ -152,6 +146,7 @@ void setup_constants(span<f32> angles, vec2f init_source, u64 det_shape, f32 det
     gpuErrchk(cudaMemcpyToSymbol(dev_sources_2d, sources.data(),
                                  sizeof(curad::vec2f) * kernel::num_projections_per_kernel_2d, 0,
                                  cudaMemcpyDefault));
+
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
 }
@@ -177,44 +172,8 @@ void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram) {
     texture_config tex_config{vol_shape[0], vol_shape[1], 0, false};
     get_texture_cache().try_emplace(tex_config, tex_config);
     auto &tex = get_texture_cache().at(tex_config);
-    // texture tex(tex_config);
 
     tex.write(volume.device_data());
-
-    // // TODO: bind volume to texture
-    // cudaTextureObject_t tex;
-    //
-    // // allocate cuarray with size of volume
-    // cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<f32>();
-    // cudaArray_t array;
-    // gpuErrchk(cudaMallocArray(&array, &channelDesc, vol_shape[0], vol_shape[1]));
-    // gpuErrchk(cudaPeekAtLastError());
-    //
-    // const auto size = vol_shape[0] * sizeof(f32);
-    // gpuErrchk(cudaMemcpy2DToArray(array, 0, 0, volume.device_data(), size, size, vol_shape[1],
-    //                               cudaMemcpyDefault));
-    // gpuErrchk(cudaStreamSynchronize(0));
-    // gpuErrchk(cudaPeekAtLastError());
-    //
-    // // bind texture
-    // cudaResourceDesc texRes;
-    // memset(&texRes, 0, sizeof(cudaResourceDesc));
-    // texRes.resType = cudaResourceTypeArray;
-    // texRes.res.array.array = array;
-    //
-    // cudaTextureDesc texDescr;
-    // memset(&texDescr, 0, sizeof(cudaTextureDesc));
-    // texDescr.normalizedCoords = false;
-    // texDescr.filterMode = cudaFilterModeLinear;
-    // texDescr.addressMode[0] = cudaAddressModeBorder;
-    // texDescr.addressMode[1] = cudaAddressModeBorder;
-    // texDescr.readMode = cudaReadModeElementType;
-    //
-    // gpuErrchk(cudaCreateTextureObject(&tex, &texRes, &texDescr, NULL));
-    // gpuErrchk(cudaPeekAtLastError());
-    //
-    // cudaResourceDesc desc;
-    // cudaGetTextureObjectResourceDesc(&desc, tex);
 
     const int num_kernel_calls =
         utils::round_up_division(nangles, kernel::num_projections_per_kernel_2d);
@@ -231,21 +190,17 @@ void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram) {
                                 vol_spacing, vol_offset);
 
         const u64 div_u = kernel::pixels_u_per_block_2d;
-
         dim3 grid(utils::round_up_division(det_shape, div_u),
-                  utils::round_up_division(num_projections, kernel::num_projections_per_block_2d));
-        dim3 block(div_u, kernel::num_projections_per_block_2d);
+                  utils::round_up_division(num_projections, div_u));
+        dim3 block(div_u, div_u);
 
         // Move sinogram ptr ahead
         auto sino_slice = sinogram.slice(proj_idx, num_projections);
-        kernel::kernel_forward_2d<<<grid, block>>>(sino_slice, vol_shape, DSD, DSO, nangles, tex.tex(),
-                                                   accuracy);
+        kernel::kernel_forward_2d<<<grid, block>>>(sino_slice, vol_shape, DSD, DSO, nangles,
+                                                   tex.tex(), accuracy);
     }
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
-
-    // cudaFreeArray(array);
-    // cudaDestroyTextureObject(tex);
 }
 
 } // namespace curad::fp
