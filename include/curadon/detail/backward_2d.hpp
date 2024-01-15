@@ -9,6 +9,7 @@
 #include "curadon/detail/image_2d.hpp"
 #include "curadon/detail/measurement_2d.hpp"
 #include "curadon/detail/rotation.hpp"
+#include "curadon/detail/texture_cache.hpp"
 #include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
 
@@ -163,32 +164,9 @@ void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
     auto angles = sino.angles();
     auto nangles = sino.nangles();
 
-    // allocate cuarray with size of volume
-    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<f32>();
-    cudaArray_t array;
-
-    // IMPORTANT: height 0 required for 1Dlayered
-    auto extentDesc = make_cudaExtent(det_shape, 0, kernel::num_projections_per_kernel_2d);
-    gpuErrchk(cudaMalloc3DArray(&array, &channelDesc, extentDesc, cudaArrayLayered));
-    gpuErrchk(cudaPeekAtLastError());
-
-    // Create texture
-    cudaResourceDesc texRes;
-    memset(&texRes, 0, sizeof(cudaResourceDesc));
-
-    texRes.resType = cudaResourceTypeArray;
-    texRes.res.array.array = array;
-
-    cudaTextureDesc texDescr;
-    memset(&texDescr, 0, sizeof(cudaTextureDesc));
-
-    texDescr.normalizedCoords = false;
-    texDescr.filterMode = cudaFilterModeLinear;
-    texDescr.addressMode[0] = cudaAddressModeBorder;
-    texDescr.addressMode[1] = cudaAddressModeBorder;
-    texDescr.readMode = cudaReadModeElementType;
-
-    Texture tex(texRes, texDescr);
+    texture_config tex_config{det_shape, 0, kernel::num_projections_per_kernel_2d, true};
+    get_texture_cache().try_emplace(tex_config, tex_config);
+    auto &tex = get_texture_cache().at(tex_config);
 
     const int num_kernel_calls =
         utils::round_up_division(nangles, kernel::num_projections_per_kernel_2d);
@@ -201,16 +179,7 @@ void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
         // Copy projection data necessary for the next kernel to cuda array
         const auto offset = proj_idx * det_shape;
         auto cur_proj_ptr = sino_ptr + offset;
-        const auto size = det_shape * sizeof(U);
-        cudaMemcpy3DParms mParams = {0};
-        mParams.srcPtr = make_cudaPitchedPtr(cur_proj_ptr, size, det_shape, 1);
-        mParams.kind = cudaMemcpyHostToDevice;
-
-        // Important! non-zero height required for memcpy to do anything
-        mParams.extent = make_cudaExtent(det_shape, 1, num_projections);
-        mParams.dstArray = array;
-        gpuErrchk(cudaMemcpy3D(&mParams));
-        gpuErrchk(cudaPeekAtLastError());
+        tex.write(cur_proj_ptr, num_projections);
 
         // kernel uses variables stored in __constant__ memory, e.g. volume origin, volume
         // deltas Compute them here and upload them
@@ -226,13 +195,11 @@ void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
         int block_y = utils::round_up_division(vol_shape[1], divy);
         dim3 num_blocks(block_x, block_y);
         kernel::backward_2d<<<num_blocks, threads_per_block>>>(volume.device_data(), vol_shape[0],
-                                                               vol_shape, tex.handle(), det_shape,
+                                                               vol_shape, tex.tex(), det_shape,
                                                                proj_idx, nangles, source, DSD, DSO);
 
-        gpuErrchk(cudaPeekAtLastError());
-        gpuErrchk(cudaDeviceSynchronize());
     }
-
-    cudaFreeArray(array);
+    gpuErrchk(cudaPeekAtLastError());
+    gpuErrchk(cudaDeviceSynchronize());
 }
 } // namespace curad::bp

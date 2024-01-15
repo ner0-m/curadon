@@ -7,6 +7,7 @@
 #include "curadon/detail/rotation.hpp"
 #include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
+#include "curadon/detail/texture_cache.hpp"
 
 #include "curadon/detail/intersection.h"
 
@@ -173,40 +174,47 @@ void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram) {
     // TODO: make this configurable
     const f32 accuracy = 1.f;
 
-    // TODO: bind volume to texture
-    cudaTextureObject_t tex;
+    texture_config tex_config{vol_shape[0], vol_shape[1], 0, false};
+    get_texture_cache().try_emplace(tex_config, tex_config);
+    auto &tex = get_texture_cache().at(tex_config);
+    // texture tex(tex_config);
 
-    // allocate cuarray with size of volume
-    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<f32>();
-    cudaArray_t array;
-    gpuErrchk(cudaMallocArray(&array, &channelDesc, vol_shape[0], vol_shape[1]));
-    gpuErrchk(cudaPeekAtLastError());
+    tex.write(volume.device_data());
 
-    const auto size = vol_shape[0] * sizeof(f32);
-    gpuErrchk(cudaMemcpy2DToArray(array, 0, 0, volume.device_data(), size, size, vol_shape[1],
-                                  cudaMemcpyDefault));
-    gpuErrchk(cudaStreamSynchronize(0));
-    gpuErrchk(cudaPeekAtLastError());
-
-    // bind texture
-    cudaResourceDesc texRes;
-    memset(&texRes, 0, sizeof(cudaResourceDesc));
-    texRes.resType = cudaResourceTypeArray;
-    texRes.res.array.array = array;
-
-    cudaTextureDesc texDescr;
-    memset(&texDescr, 0, sizeof(cudaTextureDesc));
-    texDescr.normalizedCoords = false;
-    texDescr.filterMode = cudaFilterModeLinear;
-    texDescr.addressMode[0] = cudaAddressModeBorder;
-    texDescr.addressMode[1] = cudaAddressModeBorder;
-    texDescr.readMode = cudaReadModeElementType;
-
-    gpuErrchk(cudaCreateTextureObject(&tex, &texRes, &texDescr, NULL));
-    gpuErrchk(cudaPeekAtLastError());
-
-    cudaResourceDesc desc;
-    cudaGetTextureObjectResourceDesc(&desc, tex);
+    // // TODO: bind volume to texture
+    // cudaTextureObject_t tex;
+    //
+    // // allocate cuarray with size of volume
+    // cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<f32>();
+    // cudaArray_t array;
+    // gpuErrchk(cudaMallocArray(&array, &channelDesc, vol_shape[0], vol_shape[1]));
+    // gpuErrchk(cudaPeekAtLastError());
+    //
+    // const auto size = vol_shape[0] * sizeof(f32);
+    // gpuErrchk(cudaMemcpy2DToArray(array, 0, 0, volume.device_data(), size, size, vol_shape[1],
+    //                               cudaMemcpyDefault));
+    // gpuErrchk(cudaStreamSynchronize(0));
+    // gpuErrchk(cudaPeekAtLastError());
+    //
+    // // bind texture
+    // cudaResourceDesc texRes;
+    // memset(&texRes, 0, sizeof(cudaResourceDesc));
+    // texRes.resType = cudaResourceTypeArray;
+    // texRes.res.array.array = array;
+    //
+    // cudaTextureDesc texDescr;
+    // memset(&texDescr, 0, sizeof(cudaTextureDesc));
+    // texDescr.normalizedCoords = false;
+    // texDescr.filterMode = cudaFilterModeLinear;
+    // texDescr.addressMode[0] = cudaAddressModeBorder;
+    // texDescr.addressMode[1] = cudaAddressModeBorder;
+    // texDescr.readMode = cudaReadModeElementType;
+    //
+    // gpuErrchk(cudaCreateTextureObject(&tex, &texRes, &texDescr, NULL));
+    // gpuErrchk(cudaPeekAtLastError());
+    //
+    // cudaResourceDesc desc;
+    // cudaGetTextureObjectResourceDesc(&desc, tex);
 
     const int num_kernel_calls =
         utils::round_up_division(nangles, kernel::num_projections_per_kernel_2d);
@@ -230,14 +238,14 @@ void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram) {
 
         // Move sinogram ptr ahead
         auto sino_slice = sinogram.slice(proj_idx, num_projections);
-        kernel::kernel_forward_2d<<<grid, block>>>(sino_slice, vol_shape, DSD, DSO, nangles, tex,
+        kernel::kernel_forward_2d<<<grid, block>>>(sino_slice, vol_shape, DSD, DSO, nangles, tex.tex(),
                                                    accuracy);
     }
     gpuErrchk(cudaPeekAtLastError());
     gpuErrchk(cudaDeviceSynchronize());
 
-    cudaFreeArray(array);
-    cudaDestroyTextureObject(tex);
+    // cudaFreeArray(array);
+    // cudaDestroyTextureObject(tex);
 }
 
 } // namespace curad::fp
