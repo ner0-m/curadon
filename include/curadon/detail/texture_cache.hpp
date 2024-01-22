@@ -72,6 +72,9 @@ struct texture {
         // if using a single channel use cudaMemcpy to copy data into array
         cudaMemcpy3DParms cpy_params = {0};
 
+        cpy_params.srcPos = make_cudaPos(0, 0, 0);
+        cpy_params.dstPos = make_cudaPos(0, 0, 0);
+
         cpy_params.srcPtr = make_cudaPitchedPtr(data, config_.width * sizeof(float), config_.width,
                                                 std::max<u64>(config_.height, 1));
         cpy_params.dstArray = this->storage_;
@@ -79,7 +82,8 @@ struct texture {
         cpy_params.extent = make_cudaExtent(config_.width, std::max<u64>(config_.height, 1),
                                             std::max<u64>(depth, 1));
 
-        cpy_params.kind = cudaMemcpyDefault;
+        // cpy_params.kind = cudaMemcpyDefault;
+        cpy_params.kind = cudaMemcpyDeviceToDevice;
         gpuErrchk(cudaMemcpy3D(&cpy_params));
     }
 
@@ -103,6 +107,8 @@ struct texture {
     // TODO: torch-radon uses cudaSurfaceObject_t to write e.g. half-precision types
     // cudaSurfaceObject_t surface_ = 0;
 };
+
+using texture_cache_key = std::tuple<void *, texture_config>;
 } // namespace curad
 
 namespace curad::detail {
@@ -128,10 +134,23 @@ struct std::hash<curad::texture_config> {
         return seed;
     }
 };
+
+template <>
+struct std::hash<curad::texture_cache_key> {
+    std::size_t operator()(const curad::texture_cache_key &k) const {
+        // Compute individual hash values for first,
+        // second and third and combine them using XOR
+        // and bit shifting:
+        auto seed = std::hash<void *>{}(std::get<0>(k));
+        ::curad::detail::hash_combine(seed, std::get<1>(k));
+
+        return seed;
+    }
+};
 } // namespace std
 
 namespace curad {
-using texture_cache = std::unordered_map<texture_config, texture>;
+using texture_cache = std::unordered_map<texture_cache_key, texture>;
 
 inline texture_cache &get_texture_cache() {
     static texture_cache cache(10);

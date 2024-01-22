@@ -23,8 +23,8 @@
 namespace curad::fp {
 namespace kernel {
 
-static constexpr u64 pixels_u_per_block_2d = 8;
-static constexpr u64 num_projections_per_kernel_2d = 360;
+static constexpr u64 pixels_u_per_block_2d = 32;
+static constexpr u64 num_projections_per_kernel_2d = 256;
 
 __constant__ vec2f dev_u_origins_2d[num_projections_per_kernel_2d];
 __constant__ vec2f dev_delta_us_2d[num_projections_per_kernel_2d];
@@ -170,10 +170,14 @@ void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram) {
     const f32 accuracy = 1.f;
 
     texture_config tex_config{vol_shape[0], vol_shape[1], 0, false};
-    get_texture_cache().try_emplace(tex_config, tex_config);
-    auto &tex = get_texture_cache().at(tex_config);
+    texture_cache_key key = {static_cast<void *>(volume.device_data()), tex_config};
 
-    tex.write(volume.device_data());
+    auto [_, inserted] = get_texture_cache().try_emplace(key, tex_config);
+    auto &tex = get_texture_cache().at(key);
+
+    if (inserted) {
+        tex.write(volume.device_data());
+    }
 
     const int num_kernel_calls =
         utils::round_up_division(nangles, kernel::num_projections_per_kernel_2d);
