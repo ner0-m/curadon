@@ -78,9 +78,9 @@ void backward_2d_cuda(
                                          curad_vol_offset);
 
     std::vector<curad::f32> cpu_angles(angles.data(), angles.data() + angles.size());
+    const auto nangles = cpu_angles.size();
 
-    curad::measurement_2d<curad::f32> sino_span(sino.data(), det_shape, det_spacing, det_offset);
-    sino_span.set_angles(cpu_angles);
+    curad::measurement_2d<curad::f32> sino_span(sino.data(), det_shape, nangles, det_spacing, det_offset);
     sino_span.set_angles(cpu_angles);
     sino_span.set_distance_source_to_object(DSO);
     sino_span.set_distance_source_to_detector(DSD);
