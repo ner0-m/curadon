@@ -1,9 +1,13 @@
 #pragma once
 
+#include <cstdio>
 #include <cstring>
 #include <cuda_runtime_api.h>
 #include <iostream>
+#include <texture_indirect_functions.h>
 #include <vector>
+
+#include <thrust/device_vector.h>
 
 #include "curadon/detail/error.h"
 #include "curadon/detail/image_2d.hpp"
@@ -15,139 +19,75 @@
 
 namespace curad::bp {
 namespace kernel {
-static constexpr i64 num_projections_per_kernel_2d = 32;
+static constexpr i64 num_projections_per_kernel_2d = 128;
 
-static constexpr i64 num_voxels_per_thread_2d = 8;
+__constant__ f32 dev_angles_2d[num_projections_per_kernel_2d];
 
-__constant__ vec2f dev_vol_origin_2d[num_projections_per_kernel_2d];
-__constant__ vec2f dev_delta_x_2d[num_projections_per_kernel_2d];
-__constant__ vec2f dev_delta_y_2d[num_projections_per_kernel_2d];
+template <typename T>
+__global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_spacing,
+                            vec2f vol_offset, cudaTextureObject_t texture, u64 det_shape,
+                            f32 det_spacing, f32 DSD, f32 DSO, u64 cur_projection, u64 nangles) {
+    // Calculate image coordinates
+    const u64 x = blockIdx.x * blockDim.x + threadIdx.x;
 
-template <class T>
-__global__ void backward_2d(T *volume, i64 vol_stride, vec2u vol_shape, cudaTextureObject_t tex,
-                            u64 det_shape, i64 cur_projection, i64 nprojections, vec2f source,
-                            f32 DSO, f32 DSD) {
-    const auto idx_x = blockIdx.x * blockDim.x + threadIdx.x;
-    const auto start_y = blockIdx.y * num_voxels_per_thread_2d + threadIdx.y;
+    const u64 y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (idx_x >= vol_shape[0] || start_y >= vol_shape[1]) {
+    const u64 tid = threadIdx.y * blockDim.x + threadIdx.x;
+
+    const f32 vol_extend_x = vol_shape[0] / 2.0f;
+    const f32 vol_extend_y = vol_shape[1] / 2.0f;
+    const f32 det_extend_u = det_shape / 2.0f;
+
+    const f32 inv_u_spacing = __fdividef(1.0f, det_spacing);
+
+    if (x >= vol_shape[0] || y >= vol_shape[1]) {
         return;
     }
 
-    f32 local_volume[num_voxels_per_thread_2d];
+    // keep sin and cos packed together to save one memory load in the main loop
+    __shared__ float2 sincos[num_projections_per_kernel_2d];
 
-    // load volume into local_volume
-#pragma unroll
-    for (i64 y = 0; y < num_voxels_per_thread_2d; y++) {
-        const auto idx_y = start_y + y;
-
-        if (idx_y >= vol_shape[1]) {
-            break;
-        }
-        local_volume[y] = volume[idx_x + idx_y * vol_stride];
-    }
-
-    // Do the thing
-    for (int proj = 0; proj < num_projections_per_kernel_2d; ++proj) {
-        auto idx_proj = cur_projection + proj;
-
-        if (idx_proj >= nprojections) {
-            break;
-        }
-
-        const auto vol_origin = dev_vol_origin_2d[proj];
-        const auto delta_x = dev_delta_x_2d[proj];
-        const auto delta_y = dev_delta_y_2d[proj];
-
-#pragma unroll
-        for (i64 y = 0; y < num_voxels_per_thread_2d; y++) {
-            const auto idx_y = start_y + y;
-
-            if (idx_y >= vol_shape[1]) {
-                break;
-            }
-
-            auto P = vol_origin + idx_x * delta_x + idx_y * delta_y;
-
-            // Compute line from source to P
-            auto dir = P - source;
-
-            // Compute intersection of detector with dir
-            auto t = __fdividef(DSO - DSD - source[1], dir[1]);
-
-            // Coordinates are from [-det_shape / 2, det_shape / 2], hence shift it to be
-            // strictly positive
-            auto u = (dir[0] * t + source[0]) + det_shape / 2;
-
-            auto sample = tex1DLayered<f32>(tex, u, proj);
-
-            local_volume[y] += sample;
+    for (int i = tid; i < nangles; i += blockDim.x * blockDim.y) {
+        if (i < num_projections_per_kernel_2d) {
+            float2 tmp;
+            tmp.x = -__sinf(dev_angles_2d[i]);
+            tmp.y = __cosf(dev_angles_2d[i]);
+            sincos[i] = tmp;
         }
     }
+    __syncthreads();
 
-    // Write back local_volume to volume
-#pragma unroll
-    for (i64 y = 0; y < num_voxels_per_thread_2d; y++) {
-        const auto idx_y = start_y + y;
+    // Loop over all pixels this kernel works on
+    const f32 real_x = (f32(x) - vol_extend_x) * vol_spacing[0] + vol_offset[0] + 0.5f;
+    const f32 real_y = (f32(y) - vol_extend_y) * vol_spacing[1] + vol_offset[1] + 0.5f;
 
-        if (idx_y >= vol_shape[1]) {
+    const f32 scaled_real_x = real_x * inv_u_spacing;
+    const f32 scaled_real_y = real_y * inv_u_spacing;
+
+    f32 fi = 0.5f;
+    f32 accum = 0.0f;
+
+#pragma unroll(16)
+    for (int proj_idx = 0; proj_idx < num_projections_per_kernel_2d; proj_idx++) {
+        if (proj_idx + cur_projection > nangles) {
             break;
         }
 
-        volume[idx_x + idx_y * vol_stride] = local_volume[y];
-    }
-}
+        const auto sin = sincos[proj_idx].x;
+        const auto cos = sincos[proj_idx].y;
 
-void setup_constants(vec2f vol_extent, vec2f vol_spacing, vec2f vol_offset, span<f32> angles) {
-    std::vector<curad::vec2f> vol_origins;
-    std::vector<curad::vec2f> delta_xs;
-    std::vector<curad::vec2f> delta_ys;
+        const f32 den = fmaf(cos, -real_y, sin * real_x + DSO);
+        const f32 iden = __fdividef(DSD, den);
+        const f32 u = (cos * scaled_real_x + sin * scaled_real_y) * iden + det_extend_u;
 
-    for (int i = 0; i < angles.size(); ++i) {
-        // TODO: check what am I still missing to make this feature complete? Check with tigre
+        accum += tex1DLayered<float>(texture, u, fi) * iden;
 
-        auto init_vol_origin = -vol_extent / 2.f + vol_spacing / 2.f + vol_offset;
-        auto vol_origin = curad::geometry::rotate(init_vol_origin, angles[i]);
-        vol_origins.push_back(vol_origin);
-
-        auto init_delta = init_vol_origin;
-        init_delta[0] += vol_spacing[0];
-        init_delta = curad::geometry::rotate(init_delta, angles[i]);
-        delta_xs.push_back(init_delta - vol_origin);
-
-        init_delta = init_vol_origin;
-        init_delta[1] += vol_spacing[1];
-        init_delta = curad::geometry::rotate(init_delta, angles[i]);
-        delta_ys.push_back(init_delta - vol_origin);
+        fi += 1.0f;
     }
 
-    cudaMemcpyToSymbol(dev_vol_origin_2d, vol_origins.data(),
-                       sizeof(curad::vec2f) * kernel::num_projections_per_kernel_2d, 0,
-                       cudaMemcpyDefault);
-    cudaMemcpyToSymbol(dev_delta_x_2d, delta_xs.data(),
-                       sizeof(curad::vec2f) * kernel::num_projections_per_kernel_2d, 0,
-                       cudaMemcpyDefault);
-    cudaMemcpyToSymbol(dev_delta_y_2d, delta_ys.data(),
-                       sizeof(curad::vec2f) * kernel::num_projections_per_kernel_2d, 0,
-                       cudaMemcpyDefault);
-    gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaDeviceSynchronize());
+    volume[x + vol_shape[0] * y] += accum;
 }
 } // namespace kernel
-
-class Texture {
-  public:
-    Texture(cudaResourceDesc texRes, cudaTextureDesc texDescr) {
-        gpuErrchk(cudaCreateTextureObject(&handle_, &texRes, &texDescr, NULL));
-    }
-
-    cudaTextureObject_t handle() const { return handle_; }
-
-    ~Texture() { gpuErrchk(cudaDestroyTextureObject(handle_)); }
-
-  private:
-    cudaTextureObject_t handle_;
-};
 
 template <class T, class U>
 void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
@@ -158,6 +98,7 @@ void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
 
     auto sino_ptr = sino.device_data();
     auto det_shape = sino.detector_shape();
+    auto det_spacing = sino.spacing();
     auto DSD = sino.distance_source_to_detector();
     auto DSO = sino.distance_source_to_object();
     auto source = sino.source();
@@ -165,8 +106,6 @@ void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
     auto nangles = sino.nangles();
 
     texture_config tex_config{det_shape, 0, kernel::num_projections_per_kernel_2d, true};
-    get_texture_cache().try_emplace(tex_config, tex_config);
-    auto &tex = get_texture_cache().at(tex_config);
 
     const int num_kernel_calls =
         utils::round_up_division(nangles, kernel::num_projections_per_kernel_2d);
@@ -179,27 +118,33 @@ void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
         // Copy projection data necessary for the next kernel to cuda array
         const auto offset = proj_idx * det_shape;
         auto cur_proj_ptr = sino_ptr + offset;
-        tex.write(cur_proj_ptr, num_projections);
 
-        // kernel uses variables stored in __constant__ memory, e.g. volume origin, volume
-        // deltas Compute them here and upload them
-        kernel::setup_constants(vol_extent, vol_spacing, vol_offset,
-                                angles.subspan(proj_idx, num_projections));
+        texture_cache_key key = {static_cast<void *>(cur_proj_ptr), tex_config};
+        auto [_, inserted] = get_texture_cache().try_emplace(key, tex_config);
+        auto &tex = get_texture_cache().at(key);
 
-        int divx = 16;
-        int divy = kernel::num_voxels_per_thread_2d;
+        if (inserted) {
+            tex.write(cur_proj_ptr, num_projections);
+        }
 
-        dim3 threads_per_block(divx, 1);
+        // Upload angles to device
+        cudaMemcpyToSymbol(bp::kernel::dev_angles_2d,
+                           angles.subspan(proj_idx, num_projections).data(),
+                           sizeof(curad::f32) * num_projections, 0, cudaMemcpyDefault);
+        int divx = 8;
+        int divy = 8;
+        dim3 threads_per_block(divx, divy);
 
         int block_x = utils::round_up_division(vol_shape[0], divx);
         int block_y = utils::round_up_division(vol_shape[1], divy);
-        dim3 num_blocks(block_x, block_y);
-        kernel::backward_2d<<<num_blocks, threads_per_block>>>(volume.device_data(), vol_shape[0],
-                                                               vol_shape, tex.tex(), det_shape,
-                                                               proj_idx, nangles, source, DSD, DSO);
 
+        dim3 num_blocks(block_x, block_y);
+        kernel::backward_2d<<<num_blocks, threads_per_block>>>(
+            volume.device_data(), vol_shape, vol_spacing, vol_offset, tex.tex(), det_shape,
+            det_spacing, DSD, DSO, proj_idx, nangles);
+
+        gpuErrchk(cudaPeekAtLastError());
+        gpuErrchk(cudaDeviceSynchronize());
     }
-    gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaDeviceSynchronize());
 }
 } // namespace curad::bp
