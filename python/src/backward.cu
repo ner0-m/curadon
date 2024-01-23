@@ -9,6 +9,10 @@
 
 #include <vector>
 
+#include <cuda_fp16.h>
+
+#include "common.h"
+
 namespace nb = nanobind;
 
 void backward_3d_cuda(
@@ -58,15 +62,22 @@ void backward_3d_cuda(
     curad::bp::backproject_3d(vol_span, sino_span);
 }
 
-void backward_2d_cuda(
-    nb::ndarray<curad::f32, nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> vol,
-    nb::ndarray<curad::u64, nb::shape<2>, nb::device::cpu> vol_shape,
-    nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> vol_spacing,
-    nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> vol_offset,
-    nb::ndarray<curad::f32, nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
-    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> angles, curad::u64 det_shape,
-    curad::f32 det_spacing, curad::f32 det_offset, curad::f32 det_rotation, curad::f32 DSO,
-    curad::f32 DSD, curad::f32 COR) {
+void backward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> vol,
+                      nb::ndarray<curad::u64, nb::shape<2>, nb::device::cpu> vol_shape,
+                      nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> vol_spacing,
+                      nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> vol_offset,
+                      nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
+                      nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cuda> angles,
+                      curad::u64 det_shape, curad::f32 det_spacing, curad::f32 det_offset,
+                      curad::f32 det_rotation, curad::f32 DSO, curad::f32 DSD, curad::f32 COR) {
+    // TODO: make dispatch possible based on types
+    if (vol.dtype() != nb::dtype<curad::f32>()) {
+        throw nb::type_error("Input image must for of type float32");
+    }
+
+    if (sino.dtype() != nb::dtype<curad::f32>()) {
+        throw nb::type_error("Input sinogram must for of type float32");
+    }
 
     // Never forgetti, Python calls (z, y, x), we do (x, y, z)
     curad::vec2u curad_vol_shape{vol_shape(1), vol_shape(0)};
@@ -74,14 +85,15 @@ void backward_2d_cuda(
     curad::vec2f curad_vol_offset{vol_offset(1), vol_offset(0)};
     curad::vec2f curad_vol_extent = curad_vol_shape * curad_vol_spacing;
 
-    curad::image_2d<curad::f32> vol_span(vol.data(), curad_vol_shape, curad_vol_spacing,
-                                         curad_vol_offset);
+    curad::image_2d<curad::f32> vol_span((curad::f32 *)vol.data(), curad_vol_shape,
+                                         curad_vol_spacing, curad_vol_offset);
 
-    std::vector<curad::f32> cpu_angles(angles.data(), angles.data() + angles.size());
-    const auto nangles = cpu_angles.size();
+    const auto nangles = angles.size();
 
-    curad::measurement_2d<curad::f32> sino_span(sino.data(), det_shape, nangles, det_spacing, det_offset);
-    sino_span.set_angles(cpu_angles);
+    curad::measurement_2d<curad::f32> sino_span((curad::f32 *)sino.data(), det_shape, nangles,
+                                                det_spacing, det_offset);
+    curad::span<curad::f32> angles_span(angles.data(), angles.size());
+    sino_span.set_angles(angles_span);
     sino_span.set_distance_source_to_object(DSO);
     sino_span.set_distance_source_to_detector(DSD);
     sino_span.set_center_of_rotation_correction(COR);
