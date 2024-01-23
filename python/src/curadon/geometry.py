@@ -76,7 +76,7 @@ class FanGeometry:
         self.det_shape = int(det_shape)
 
         # Check angles
-        self.angles = np.asarray(angles)
+        self.angles = torch.from_numpy(angles).cuda()
         if self.angles.ndim != 1:
             raise AttributeError(
                 f"Angles must be 1D array, got {str(angles.shape)}")
