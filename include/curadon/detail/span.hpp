@@ -17,6 +17,8 @@ class span {
     using reference = T &;
     using const_reference = T const &;
 
+    span() = default;
+
     span(T *data, size_type size)
         : data_(data)
         , size_(size) {}
@@ -36,7 +38,7 @@ class span {
     span subspan(size_type offset, size_type size) { return span(data_ + offset, size); }
 
   private:
-    pointer data_;
-    size_type size_;
+    pointer data_ = nullptr;
+    size_type size_= 0;
 };
 } // namespace curad
