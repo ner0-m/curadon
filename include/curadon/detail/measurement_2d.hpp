@@ -28,7 +28,7 @@ class measurement_2d {
         , DSD(0)
         , DSO(0)
         , COR(0)
-        , angles_(this->nangles(), 0)
+        , angles_()
         , pitch_(0) {}
 
     u64 size() const { return data_.size(); }
@@ -100,7 +100,7 @@ class measurement_2d {
         return *this;
     }
 
-    measurement_2d<T> &set_angles(std::vector<f32> new_angles) {
+    measurement_2d<T> &set_angles(span<f32> new_angles) {
         nangles_ = new_angles.size();
         angles_ = std::move(new_angles);
         return *this;
@@ -131,7 +131,8 @@ class measurement_2d {
 
     // euler angles in radian, TODO: change to device_uvector? But we only need it in the
     // pre-computing phase, so let's think about this a little more
-    std::vector<f32> angles_;
+    // std::vector<f32> angles_;
+    span<f32> angles_;
 
     // Detector rotation in radians, TODO: maybe make this a vector?
     f32 pitch_;
