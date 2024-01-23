@@ -10,7 +10,7 @@ namespace curad {
 template <class T, i64 Dim>
 class vec {
   public:
-    __host__ __device__ vec() = default;
+    vec() = default;
 
     __host__ __device__ vec(const T &t)
         : data_{t} {}
