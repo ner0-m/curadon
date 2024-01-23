@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import curadon
 import torch
+import astra
 from torch_radon import FanBeam, Volume2D
 
 import pyelsa as elsa
@@ -23,16 +24,11 @@ nangles = 360
 
 def forward_curadon(n):
     vol_shape = np.array([n, n], dtype=np.uint32)
-    vol_spacing = np.array([1, 1], dtype=np.float32)
-    vol_offset = np.array([0, 0], dtype=np.float32)
 
     shepp_logan = np.asarray(elsa.phantoms.modifiedSheppLogan(vol_shape))
     volume = torch.from_numpy(shepp_logan).type(torch.float32).cuda()
 
     det_shape = int(n * np.sqrt(2))
-    det_spacing = 1
-    det_offset = 0
-    det_rotation = 0
 
     angles = np.linspace(0, 2 * np.pi, nangles, endpoint=False)
     sinogram = torch.zeros(len(angles), det_shape).type(torch.float32).cuda()
@@ -40,14 +36,11 @@ def forward_curadon(n):
     DSD = DSO + n * 2.
     COR = 0.
 
-    curadon.forward_2d(volume, vol_shape, vol_spacing, vol_offset, sinogram,
-                       angles, det_shape, det_spacing, det_offset, det_rotation, DSO, DSD, COR)
+    geom = curadon.FanGeometry(DSD, DSO, angles, vol_shape, det_shape)
 
-    bp = torch.zeros_like(volume)
-    curadon.backward_2d(bp, vol_shape, vol_spacing, vol_offset, sinogram,
-                        angles, det_shape, det_spacing, det_offset, det_rotation, DSO, DSD, COR)
-    return sinogram.cpu().detach().numpy(), bp.cpu().detach().numpy()
-
+    sino = curadon.forward(volume, geom)
+    bp = curadon.backward(sino, geom)
+    return sino.cpu().detach().numpy(), bp.cpu().detach().numpy()
 
 
 def forward_elsa(n):
@@ -84,7 +77,6 @@ def forward_elsa(n):
     return np.asarray(sino), np.asarray(bp)
 
 
-
 def forward_torchradon(n):
     vol_shape = np.array([n, n], dtype=np.uint32)
     vol_spacing = np.array([1, 1], dtype=np.float32)
@@ -113,38 +105,68 @@ def forward_torchradon(n):
     return sino.cpu().detach().numpy(), bp.cpu().detach().numpy()
 
 
-n = 256
-fd_curadon, bp_curadon = forward_curadon(n)
-fd_elsa, bp_elsa = forward_elsa(n)
-fd_torchradon, bp_torchradon = forward_torchradon(n)
+def forward_astra(n):
+    vol_geom = astra.create_vol_geom(n, n)
+    det_width = 1.
+    det_count = int(n * np.sqrt(2))
+    angles = np.linspace(0, 2 * np.pi, nangles, endpoint=False)
+    DSO = n * 20.
+    DSD = DSO + n * 2.
 
-fig, ax = plt.subplots(2, 3)
-ax[0][0].imshow(fd_curadon, cmap="gray")
+    proj_geom = astra.create_proj_geom(
+        'fanflat', det_width, det_count, angles, DSO, DSD - DSO)
+
+    img = np.array(elsa.phantoms.modifiedSheppLogan((n, n)))
+
+    proj_id = astra.create_projector('cuda', proj_geom, vol_geom)
+    sinogram_id, sinogram = astra.create_sino(img, proj_id)
+    bp_id, bp = astra.create_backprojection(sinogram, proj_id)
+
+    return sinogram, bp
+
+
+n = 256
+fp_curadon, bp_curadon = forward_curadon(n)
+fp_elsa, bp_elsa = forward_elsa(n)
+fp_torchradon, bp_torchradon = forward_torchradon(n)
+fp_astra, bp_astra = forward_astra(n)
+
+
+fig, ax = plt.subplots(2, 4)
+ax[0][0].imshow(fp_curadon, cmap="gray")
 ax[0][0].set_title("fp curadon")
 ax[0][0].grid(False)
-ax[0][1].imshow(fd_elsa, cmap="gray")
+ax[0][1].imshow(np.abs(fp_curadon - fp_elsa), cmap="gray")
 ax[0][1].set_title("fp elsa")
 ax[0][1].grid(False)
-ax[0][2].imshow(fd_torchradon, cmap="gray")
+ax[0][2].imshow(np.abs(fp_curadon - fp_torchradon), cmap="gray")
 ax[0][2].set_title("fp torch-radon")
 ax[0][2].grid(False)
+ax[0][3].imshow(np.abs(fp_curadon - fp_astra), cmap="gray")
+ax[0][3].set_title("fp torch-radon")
+ax[0][3].grid(False)
 
 ax[1][0].imshow(bp_curadon, cmap="gray")
 ax[1][0].set_title("bp curadon")
 ax[1][0].grid(False)
-ax[1][1].imshow(bp_elsa, cmap="gray")
+ax[1][1].imshow(np.abs(bp_curadon - bp_elsa), cmap="gray")
 ax[1][1].set_title("bp elsa")
 ax[1][1].grid(False)
-ax[1][2].imshow(bp_torchradon, cmap="gray")
+ax[1][2].imshow(np.abs(bp_curadon - bp_torchradon), cmap="gray")
 ax[1][2].set_title("bp torch-radon")
 ax[1][2].grid(False)
+ax[1][3].imshow(np.abs(bp_curadon - bp_astra), cmap="gray")
+ax[1][3].set_title("bp torch-radon")
+ax[1][3].grid(False)
 
-print(f"fp curadon min: {np.min(fd_curadon)}, max: {np.max(fd_curadon)}, mean: {np.mean(fd_curadon)}, median: {np.median(fd_curadon)}")
-print(f"fp elsa min: {np.min(fd_elsa)}, max: {np.max(fd_elsa)}, mean: {np.mean(fd_elsa)}, median: {np.median(fd_elsa)}")
-print(f"fp torchradon min: {np.min(fd_torchradon)}, max: {np.max(fd_torchradon)}, mean: {np.mean(fd_torchradon)}, median: {np.median(fd_torchradon)}")
-
-print(f"bp curadon min: {np.min(bp_curadon)}, max: {np.max(bp_curadon)}, mean: {np.mean(bp_curadon)}, median: {np.median(bp_curadon)}")
-print(f"bp elsa min: {np.min(bp_elsa)}, max: {np.max(bp_elsa)}, mean: {np.mean(bp_elsa)}, median: {np.median(bp_elsa)}")
-print(f"bp torchradon min: {np.min(bp_torchradon)}, max: {np.max(bp_torchradon)}, mean: {np.mean(bp_torchradon)}, median: {np.median(bp_torchradon)}")
+print(f"fp curadon:    min = {np.min(fp_curadon):>10.8}, max: {np.max(fp_curadon):>10.8}, mean: {np.mean(fp_curadon):>10.8}, median: {np.median(fp_curadon):>10.8}")
+print(f"fp elsa:       min = {np.min(fp_elsa):>10.8}, max: {np.max(fp_elsa):>10.8}, mean: {np.mean(fp_elsa):>10.8}, median: {np.median(fp_elsa):>10.8}")
+print(f"fp torchradon: min = {np.min(fp_torchradon):>10.8}, max: {np.max(fp_torchradon):>10.8}, mean: {np.mean(fp_torchradon):>10.8}, median: {np.median(fp_torchradon):>10.8}")
+print(f"fp astra:      min = {np.min(fp_astra):>10.8}, max: {np.max(fp_astra):>10.8}, mean: {np.mean(fp_astra):>10.8}, median: {np.median(fp_astra):>10.8}")
+print()
+print(f"bp curadon:    min = {np.min(bp_curadon):>10.8}, max: {np.max(bp_curadon):>10.8}, mean: {np.mean(bp_curadon):>10.8}, median: {np.median(bp_curadon):>10.8}")
+print(f"bp elsa:       min = {np.min(bp_elsa):>10.8}, max: {np.max(bp_elsa):>10.8}, mean: {np.mean(bp_elsa):>10.8}, median: {np.median(bp_elsa):>10.8}")
+print(f"bp torchradon: min = {np.min(bp_torchradon):>10.8}, max: {np.max(bp_torchradon):>10.8}, mean: {np.mean(bp_torchradon):>10.8}, median: {np.median(bp_torchradon):>10.8}")
+print(f"bp astra:      min = {np.min(bp_astra):>10.8}, max: {np.max(bp_astra):>10.8}, mean: {np.mean(bp_astra):>10.8}, median: {np.median(bp_astra):>10.8}")
 
 plt.show()

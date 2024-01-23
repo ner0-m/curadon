@@ -21,12 +21,16 @@ classifiers = [
 dependencies = [
     "numpy>=1.25.0",
     "torch>=2.0.0",
-    "phantominator>=0.7.0",
 ]
 
 [project.optional-dependencies]
 benchmark = [
+    "phantominator>=0.7.0",
     "rich>=13.7.0",
+]
+examples = [
+    "phantominator>=0.7.0",
+    "matplotlib>=3.8.0",
 ]
 
 [tool.scikit-build]
