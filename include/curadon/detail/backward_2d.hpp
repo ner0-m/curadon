@@ -19,14 +19,13 @@
 
 namespace curad::bp {
 namespace kernel {
-static constexpr i64 num_projections_per_kernel_2d = 128;
-
-__constant__ f32 dev_angles_2d[num_projections_per_kernel_2d];
+static constexpr i64 num_projections_per_kernel_2d = 512;
 
 template <typename T>
 __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_spacing,
                             vec2f vol_offset, cudaTextureObject_t texture, u64 det_shape,
-                            f32 det_spacing, f32 DSD, f32 DSO, u64 cur_projection, u64 nangles) {
+                            f32 det_spacing, f32 DSD, f32 DSO, f32 *__restrict__ angles,
+                            u64 cur_projection, u64 nangles) {
     // Calculate image coordinates
     const u64 x = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -50,21 +49,21 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
     for (int i = tid; i < nangles; i += blockDim.x * blockDim.y) {
         if (i < num_projections_per_kernel_2d) {
             float2 tmp;
-            tmp.x = -__sinf(dev_angles_2d[i]);
-            tmp.y = __cosf(dev_angles_2d[i]);
+            tmp.x = -__sinf(angles[cur_projection + i]);
+            tmp.y = __cosf(angles[cur_projection + i]);
             sincos[i] = tmp;
         }
     }
     __syncthreads();
 
-    // Loop over all pixels this kernel works on
+    // Compute x and y coordinates in world space (without rotation)
     const f32 real_x = (f32(x) - vol_extend_x) * vol_spacing[0] + vol_offset[0] + 0.5f;
     const f32 real_y = (f32(y) - vol_extend_y) * vol_spacing[1] + vol_offset[1] + 0.5f;
 
     const f32 scaled_real_x = real_x * inv_u_spacing;
     const f32 scaled_real_y = real_y * inv_u_spacing;
 
-    f32 fi = 0.5f;
+    f32 projf = 0.5f; // projected index in float (shifted by 0.5)
     f32 accum = 0.0f;
 
 #pragma unroll(16)
@@ -76,16 +75,18 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
         const auto sin = sincos[proj_idx].x;
         const auto cos = sincos[proj_idx].y;
 
-        const f32 den = fmaf(cos, -real_y, sin * real_x + DSO);
-        const f32 iden = __fdividef(DSD, den);
-        const f32 u = (cos * scaled_real_x + sin * scaled_real_y) * iden + det_extend_u;
+        // Similar to equation (2) from "CUDA and OpenCL Implementations of 3D CT Reconstruction for
+        // Biomedical Imaging", but adapted to produce equal output to TorchRadon and ASTRA
+        const f32 denominator = fmaf(cos, -real_y, sin * real_x + DSO);
+        const f32 dist_denom = __fdividef(DSD, denominator);
 
-        accum += tex1DLayered<float>(texture, u, fi) * iden;
+        const f32 u = fmaf(cos * scaled_real_x + sin * scaled_real_y, dist_denom, det_extend_u);
 
-        fi += 1.0f;
+        accum += tex1DLayered<float>(texture, u, projf) * dist_denom;
+        projf += 1.0f;
     }
 
-    volume[x + vol_shape[0] * y] += accum;
+    volume[x + vol_shape[0] * y] += accum * inv_u_spacing;
 }
 } // namespace kernel
 
@@ -127,12 +128,8 @@ void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
             tex.write(cur_proj_ptr, num_projections);
         }
 
-        // Upload angles to device
-        cudaMemcpyToSymbol(bp::kernel::dev_angles_2d,
-                           angles.subspan(proj_idx, num_projections).data(),
-                           sizeof(curad::f32) * num_projections, 0, cudaMemcpyDefault);
-        int divx = 8;
-        int divy = 8;
+        int divx = 16;
+        int divy = 16;
         dim3 threads_per_block(divx, divy);
 
         int block_x = utils::round_up_division(vol_shape[0], divx);
@@ -141,7 +138,7 @@ void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
         dim3 num_blocks(block_x, block_y);
         kernel::backward_2d<<<num_blocks, threads_per_block>>>(
             volume.device_data(), vol_shape, vol_spacing, vol_offset, tex.tex(), det_shape,
-            det_spacing, DSD, DSO, proj_idx, nangles);
+            det_spacing, DSD, DSO, angles.data(), proj_idx, nangles);
 
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
