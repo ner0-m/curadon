@@ -23,8 +23,8 @@
 namespace curad::fp {
 namespace kernel {
 
-static constexpr u64 pixels_u_per_block_2d = 32;
-static constexpr u64 num_projections_per_kernel_2d = 256;
+static constexpr u64 pixels_u_per_block_2d = 16;
+static constexpr u64 num_projections_per_kernel_2d = 512;
 
 __constant__ vec2f dev_u_origins_2d[num_projections_per_kernel_2d];
 __constant__ vec2f dev_delta_us_2d[num_projections_per_kernel_2d];
