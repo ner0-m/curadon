@@ -30,12 +30,12 @@ target_link_libraries(curadon INTERFACE CUDA::cudart)
 
 target_compile_options(
   curadon INTERFACE $<$<COMPILE_LANGUAGE:CUDA>:--expt-extended-lambda
-                    --expt-relaxed-constexpr>)
+                    --expt-relaxed-constexpr --use_fast_math>)
 
 # In release build add --generate-line-info
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
   target_compile_options(
-      curadon INTERFACE $<$<COMPILE_LANGUAGE:CUDA>:--generate-line-info>)
+    curadon INTERFACE $<$<COMPILE_LANGUAGE:CUDA>:--generate-line-info>)
 endif()
 
 cpmaddpackage("gh:onqtam/doctest@2.4.11")
