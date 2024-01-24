@@ -47,11 +47,19 @@ __host__ __device__ vec<T, 3> rotate_roll_pitch_yaw(const vec<T, 3> &v, T roll, 
     return res;
 }
 
-template <class T>
-__host__ __device__ vec<T, 2> rotate(const vec<T, 2> &v, T phi) {
-    const auto cos_phi = std::cos(phi);
-    const auto sin_phi = std::sin(phi);
+__inline__ __host__ __device__ vec2f rotate(const vec2f &v, f32 phi, const vec2f &t) {
+#ifdef __CUDA_ARCH__
+    const auto cs = __cosf(phi);
+    const auto sn = __sinf(phi);
+#else
+    const auto cs = std::cos(phi);
+    const auto sn = std::sin(phi);
+#endif
 
-    return vec<T, 2>{v[0] * cos_phi - v[1] * sin_phi, v[0] * sin_phi + v[1] * cos_phi};
+    return vec2f{v.x() * cs + v.y() * sn - t.x(), -v.x() * sn + v.y() * cs - t.y()};
+}
+
+__inline__ __host__ __device__ vec2f rotate(const vec2f &v, f32 phi) {
+    return rotate(v, phi, vec2f{0.0, 0.0});
 }
 } // namespace curad::geometry

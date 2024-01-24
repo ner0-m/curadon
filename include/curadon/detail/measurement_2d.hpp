@@ -65,7 +65,7 @@ class measurement_2d {
 
     f32 pitch() const { return pitch_; }
 
-    vec<f32, Dim> source() const { return {-offset(), -distance_source_to_object()}; }
+    vec<f32, Dim> source() const { return {offset(), distance_source_to_object()}; }
 
     device_span_2d<T> slice(u64 offset, u64 count = 1) {
         vec<u64, Dim> new_shape{detector_shape(), count};
