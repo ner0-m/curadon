@@ -1,13 +1,12 @@
 import pytest
-import matplotlib.pyplot as plt
 import numpy as np
-import curadon
 import imagehash
-import matplotlib.pyplot as plt
-import pyelsa as elsa
-import torch
 from PIL import Image
+import torch
+import curadon
+import matplotlib.pyplot as plt
 
+import pyelsa as elsa
 elsa.logger_pyelsa_generators.setLevel(elsa.LogLevel.OFF)
 elsa.logger_pyelsa_line_search.setLevel(elsa.LogLevel.OFF)
 elsa.logger_pyelsa_projectors.setLevel(elsa.LogLevel.OFF)
@@ -29,7 +28,6 @@ def config(n):
         "det_offset": 0,
         "det_rotation": 0,
         "arc": 2 * np.pi,
-        # "arc": 360,
         "nangles": 360,
         "DSO": n*20.,
         "DSD": n*20. + n * 2.,
@@ -86,38 +84,29 @@ def forward_curadon(n):
     return sino.cpu().detach().numpy()
 
 
-difference_hashes = {
-    64: imagehash.hex_to_hash("b44a1e0fd2a5b5f0"),
-    128: imagehash.hex_to_hash("e00fb44ad6e0bda5"),
-    256: imagehash.hex_to_hash("e54bc21e42e437b9"),
-    512: imagehash.hex_to_hash("a41f634a52f067e9"),
-    1024: imagehash.hex_to_hash("e06a1c3fcea5b470"),
-    2048: imagehash.hex_to_hash("a54a971f42b5e478"),
-}
-
-
 def distance(h1, h2):
     return float(h1 - h2) / len(h1.hash)**2
 
 
-def within_percentage(val1, val2, percentage=0.1):
-    return np.abs((val1 - val2) / float(val1)) <= percentage
-
-
-@pytest.mark.parametrize("n", difference_hashes.keys())
+@pytest.mark.parametrize("n", [128, 256, 512, 1024, 2048])
 def test_forward(n: int):
-    diff_hash = difference_hashes[n]
 
     # make this configurabe
     hash_fn = imagehash.phash
 
     # analytical sinogram
-    sino = create_sino(n)
+    sino = create_sino(n) * np.pi / (2 * config(n)["nangles"])
     sino_hash = hash_fn(Image.fromarray(sino))
 
     # forward projection by curadon
-    fp = forward_curadon(n)
+    fp = forward_curadon(n) * np.pi / (2 * config(n)["nangles"])
     fp_hash = hash_fn(Image.fromarray(fp))
+
+    # fig, ax = plt.subplots(1, 3)
+    # ax[0].imshow(sino, cmap="gray")
+    # ax[1].imshow(fp, cmap="gray")
+    # ax[2].imshow(np.abs(fp - sino), cmap="gray")
+    # plt.show()
 
     # fp is an numpy array,
     assert fp.shape == sino.shape
@@ -131,10 +120,19 @@ def test_forward(n: int):
 
     # Test if the forward projection is close to the analytical sinogram
     msg1 = f"Distance of hash is too large: {distance(sino_hash, fp_hash)}"
-    assert distance(sino_hash, fp_hash) <= 0.25, msg1
+    assert distance(sino_hash, fp_hash) <= 0.07, msg1
 
-    new_diff_hash = hash_fn(Image.fromarray(np.abs(fp - sino)))
+    diff_img = np.abs(fp - sino)
+
+    assert np.min(diff_img) == pytest.approx(0, rel=0.001)
+    assert np.max(diff_img) <= 1.5
+
+    img = Image.fromarray(diff_img)
+
+    new_diff_hash = hash_fn(img)
+
     # Test if the difference between the forward projection and the analytical
     # sinogram is close to some original difference
     msg2 = f"Distance of absolute difference is too large {distance(sino_hash, new_diff_hash)}"
-    assert distance(diff_hash, new_diff_hash) <= 0.05, msg2
+    assert distance(imagehash.hex_to_hash("0000000000000000"),
+                    new_diff_hash) <= 0.01, msg2
