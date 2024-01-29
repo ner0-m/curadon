@@ -24,6 +24,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dev = [
+    "scikit-build-core >=0.7.0",
+    "nanobind >=1.8.0"
+]
 benchmark = [
     "phantominator>=0.7.0",
     "rich>=13.7.0",
@@ -31,6 +35,12 @@ benchmark = [
 examples = [
     "phantominator>=0.7.0",
     "matplotlib>=3.8.0",
+    "imageio>=2.33.0",
+]
+tests = [
+    "pytest>=7.4.0",
+    "pillow>=10.0.0",
+    "imagehash>=4.3.0",
 ]
 
 [tool.scikit-build]
@@ -42,3 +52,8 @@ build-dir = "build/{wheel_tag}"
 
 # Build stable ABI wheels for CPython 3.12+
 wheel.py-api = "cp312"
+
+[tool.pytest]
+testpaths = [
+    "tests",
+]
