@@ -31,7 +31,7 @@ def forward(volume: torch.cuda.FloatTensor, geom: Union[FanGeometry, ConeGeometr
                       geom.vol_spacing,
                       geom.vol_offset,
                       sinogram,
-                      geom.angles.cpu(),
+                      geom.angles,
                       geom.det_shape,
                       geom.det_spacing,
                       geom.det_offset,

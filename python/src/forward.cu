@@ -68,7 +68,7 @@ void forward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, 
                      nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> vol_spacing,
                      nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> vol_offset,
                      nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
-                     nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> angles,
+                     nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cuda> angles,
                      curad::u64 det_shape, curad::f32 det_spacing, curad::f32 det_offset,
                      curad::f32 det_rotation, curad::f32 DSO, curad::f32 DSD, curad::f32 COR) {
     // TODO: make dispatch possible based on types
