@@ -1,7 +1,5 @@
 #pragma once
 
-
-
 #include "curadon/detail/device_span.hpp"
 #include "curadon/detail/error.h"
 #include "curadon/detail/image_2d.hpp"
@@ -10,6 +8,7 @@
 #include "curadon/detail/texture_cache.hpp"
 #include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
+#include "curadon/pool.hpp"
 
 #include "curadon/detail/intersection.h"
 
@@ -81,14 +80,17 @@ __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_sh
 }
 
 void setup_constants(span<f32> angles, vec2f init_source, u64 det_shape, f32 det_spacing, f32 DOD,
-                     vec2f vol_extent, vec2f vol_spacing, vec2f vol_offset) {
+                     vec2f vol_extent, vec2f vol_spacing, vec2f vol_offset,
+                     cuda::stream_view stream) {
+    auto nangles = angles.size();
+
     // TODO: can we do this smartly?
-    thrust::device_vector<f32> d_angles(angles.data(), angles.data() + angles.size());
+    thrust::device_vector<f32> d_angles(angles.data(), angles.data() + nangles);
     thrust::host_vector<f32> h_angles = d_angles;
 
-    std::vector<vec2f> u_origins(angles.size());
-    std::vector<vec2f> delta_us(angles.size());
-    std::vector<vec2f> sources(angles.size());
+    std::vector<vec2f> u_origins(nangles);
+    std::vector<vec2f> delta_us(nangles);
+    std::vector<vec2f> sources(nangles);
 
     auto det_extent = det_shape * det_spacing;
 
@@ -98,7 +100,7 @@ void setup_constants(span<f32> angles, vec2f init_source, u64 det_shape, f32 det
     // The next detector pixel
     vec2f init_delta_u = init_det_origin + vec2f{det_spacing, 0.f};
 
-    for (int i = 0; i < angles.size(); ++i) {
+    for (int i = 0; i < nangles; ++i) {
         auto angle = h_angles[i];
 
         // Apply geometry transformation, such that volume origin coincidence with world origin,
@@ -129,25 +131,37 @@ void setup_constants(span<f32> angles, vec2f init_source, u64 det_shape, f32 det
         sources[i] = source;
     }
 
-    gpuErrchk(cudaMemcpyToSymbol(dev_u_origins_2d, u_origins.data(),
-                                 sizeof(curad::vec2f) * kernel::num_projections_per_kernel_2d, 0,
-                                 cudaMemcpyDefault));
+    // auto event = cuda::get_next_event();
+    // auto stream1 = cuda::get_next_stream();
+    gpuErrchk(cudaMemcpyToSymbolAsync(dev_u_origins_2d, u_origins.data(),
+                                      sizeof(curad::vec2f) * nangles, 0, cudaMemcpyDefault,
+                                      stream));
     gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaMemcpyToSymbol(dev_delta_us_2d, delta_us.data(),
-                                 sizeof(curad::vec2f) * kernel::num_projections_per_kernel_2d, 0,
-                                 cudaMemcpyDefault));
-    gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaMemcpyToSymbol(dev_sources_2d, sources.data(),
-                                 sizeof(curad::vec2f) * kernel::num_projections_per_kernel_2d, 0,
-                                 cudaMemcpyDefault));
 
+    // event.record(stream1);
+    // stream.wait_for_event(event);
+
+    auto stream2 = cuda::get_next_stream();
+    gpuErrchk(cudaMemcpyToSymbolAsync(dev_delta_us_2d, delta_us.data(),
+                                      sizeof(curad::vec2f) * nangles, 0, cudaMemcpyDefault,
+                                      stream));
     gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaDeviceSynchronize());
+    // event.record(stream2);
+    // stream.wait_for_event(event);
+
+    auto stream3 = cuda::get_next_stream();
+    gpuErrchk(cudaMemcpyToSymbolAsync(dev_sources_2d, sources.data(),
+                                      sizeof(curad::vec2f) * nangles, 0, cudaMemcpyDefault,
+                                      stream));
+    gpuErrchk(cudaPeekAtLastError());
+    // event.record(stream3);
+    // stream.wait_for_event(event);
 }
 } // namespace kernel
 
 template <class T, class U>
-void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram) {
+void forward_2d_async(image_2d<T> volume, measurement_2d<U> sinogram, texture_cache &tex_cache,
+                      cuda::stream_view stream) {
     auto det_shape = sinogram.detector_shape();
     auto det_spacing = sinogram.spacing();
     auto angles = sinogram.angles();
@@ -163,8 +177,8 @@ void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram) {
     texture_config tex_config{vol_shape[0], vol_shape[1], 0, false};
     texture_cache_key key = {static_cast<void *>(volume.device_data()), tex_config};
 
-    auto [_, inserted] = get_texture_cache().try_emplace(key, tex_config);
-    auto &tex = get_texture_cache().at(key);
+    auto inserted = tex_cache.try_emplace(key, tex_config);
+    auto &tex = tex_cache.at(key);
 
     if (inserted) {
         tex.write(volume.device_data());
@@ -184,17 +198,33 @@ void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram) {
                   utils::round_up_division(num_projections, div_u));
         dim3 block(div_u, div_u);
 
+        auto loop_stream = cuda::get_next_stream();
+
         auto source = sinogram.source();
         kernel::setup_constants(angles.subspan(proj_idx, num_projections), source, det_shape,
                                 det_spacing, sinogram.distance_object_to_detector(), vol_extent,
-                                vol_spacing, vol_offset);
+                                vol_spacing, vol_offset, loop_stream);
 
         auto sino_slice = sinogram.slice(proj_idx, num_projections);
-        kernel::kernel_forward_2d<<<grid, block>>>(sino_slice, vol_shape, vol_spacing, vol_offset,
-                                                   tex.tex(), det_shape, proj_idx, nangles);
+        kernel::kernel_forward_2d<<<grid, block, 0, loop_stream>>>(
+            sino_slice, vol_shape, vol_spacing, vol_offset, tex.tex(), det_shape, proj_idx,
+            num_projections);
+
+        event.record(loop_stream);
+        stream.wait_for_event(event);
     }
-    gpuErrchk(cudaPeekAtLastError());
-    gpuErrchk(cudaDeviceSynchronize());
 }
 
+template <class T, class U>
+void forward_2d_sync(image_2d<T> volume, measurement_2d<U> sinogram, texture_cache &tex_cache,
+                     cuda::stream_view stream) {
+    forward_2d_async(volume, sinogram, tex_cache, stream);
+    stream.synchronize();
+}
+
+template <class T, class U>
+void forward_2d(image_2d<T> volume, measurement_2d<U> sinogram, texture_cache &tex_cache) {
+    auto stream = cuda::get_next_stream();
+    forward_2d_sync(volume, sinogram, tex_cache, stream);
+}
 } // namespace curad::fp

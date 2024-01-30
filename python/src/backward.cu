@@ -2,6 +2,7 @@
 #include <nanobind/ndarray.h>
 
 #include "curadon/backward.hpp"
+#include "curadon/detail/texture_cache.hpp"
 #include "curadon/detail/vec.hpp"
 #include "curadon/image.hpp"
 #include "curadon/measurement.hpp"
@@ -69,7 +70,8 @@ void backward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda,
                       nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
                       nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cuda> angles,
                       curad::u64 det_shape, curad::f32 det_spacing, curad::f32 det_offset,
-                      curad::f32 det_rotation, curad::f32 DSO, curad::f32 DSD, curad::f32 COR) {
+                      curad::f32 det_rotation, curad::f32 DSO, curad::f32 DSD, curad::f32 COR,
+                      curad::texture_cache &tex_cache) {
     // TODO: make dispatch possible based on types
     if (vol.dtype() != nb::dtype<curad::f32>()) {
         throw nb::type_error("Input image must for of type float32");
@@ -99,5 +101,5 @@ void backward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda,
     sino_span.set_center_of_rotation_correction(COR);
     sino_span.set_pitch(det_rotation);
 
-    curad::bp::backproject_2d(vol_span, sino_span);
+    curad::bp::backproject_2d(vol_span, sino_span, tex_cache);
 }

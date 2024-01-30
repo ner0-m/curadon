@@ -40,7 +40,9 @@ def backward(sinogram: torch.cuda.FloatTensor, geom: Union[FanGeometry, ConeGeom
                        geom.det_rotation,
                        geom.DSO,
                        geom.DSD,
-                       geom.COR)
+                       geom.COR,
+                       geom.tex_cache
+                       )
         return volume
     if isinstance(geom, ConeGeometry):
         _C.backward_3d(volume,

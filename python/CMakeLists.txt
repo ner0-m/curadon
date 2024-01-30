@@ -64,9 +64,11 @@ nanobind_add_module(
   # NVCC doesn't like -Os
   NOMINSIZE
   # Source code goes here
-  src/bind.cpp
+  src/bind.cu
   src/forward.cu
-  src/backward.cu)
+  src/backward.cu
+  src/stream.cu
+  src/texture.cu)
 
 target_include_directories(
   curadon_ext PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>

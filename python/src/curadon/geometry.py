@@ -3,6 +3,8 @@ import numpy as np
 
 from typing import List, Tuple, Optional, Any, Union
 
+from . import backend as _C
+
 
 def is_convertible_to_float(val: Any):
     try:
@@ -134,6 +136,8 @@ class FanGeometry:
         else:
             self.vol_offset = np.zeros(self.vol_shape.shape)
 
+        self.tex_cache = _C.texture_cache(8)
+
     def sinogram_shape(self):
         return (self.nangles, self.det_shape)
 
@@ -235,6 +239,8 @@ class ConeGeometry:
                     f"vol_offset must be three values, got {str(self.vol_offset.shape)}")
         else:
             self.vol_offset = np.zeros(self.vol_shape.shape)
+
+        self.tex_cache = _C.texture_cache(8)
 
     def sinogram_shape(self):
         return (self.nangles, *self.det_shape)

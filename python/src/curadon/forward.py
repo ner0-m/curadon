@@ -38,7 +38,8 @@ def forward(volume: torch.cuda.FloatTensor, geom: Union[FanGeometry, ConeGeometr
                       geom.det_rotation,
                       geom.DSO,
                       geom.DSD,
-                      geom.COR)
+                      geom.COR,
+                      geom.tex_cache)
         return sinogram
     if isinstance(geom, ConeGeometry):
         _C.forward_3d(volume,

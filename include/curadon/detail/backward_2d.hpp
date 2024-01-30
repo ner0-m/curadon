@@ -16,6 +16,7 @@
 #include "curadon/detail/texture_cache.hpp"
 #include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
+#include "curadon/pool.hpp"
 
 namespace curad::bp {
 namespace kernel {
@@ -91,7 +92,8 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
 } // namespace kernel
 
 template <class T, class U>
-void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
+void backproject_2d_async(image_2d<T> volume, measurement_2d<U> sino, texture_cache &tex_cache,
+                          cuda::stream_view stream) {
     auto vol_shape = volume.shape();
     auto vol_extent = volume.extent();
     auto vol_spacing = volume.spacing();
@@ -121,8 +123,8 @@ void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
         auto cur_proj_ptr = sino_ptr + offset;
 
         texture_cache_key key = {static_cast<void *>(cur_proj_ptr), tex_config};
-        auto [_, inserted] = get_texture_cache().try_emplace(key, tex_config);
-        auto &tex = get_texture_cache().at(key);
+        auto inserted = tex_cache.try_emplace(key, tex_config);
+        auto &tex = tex_cache.at(key);
 
         if (inserted) {
             tex.write(cur_proj_ptr, num_projections);
@@ -143,5 +145,18 @@ void backproject_2d(image_2d<T> volume, measurement_2d<U> sino) {
         gpuErrchk(cudaPeekAtLastError());
         gpuErrchk(cudaDeviceSynchronize());
     }
+}
+
+template <class T, class U>
+void backproject_2d_sync(image_2d<T> volume, measurement_2d<U> sinogram, texture_cache &tex_cache,
+                         cuda::stream_view stream) {
+    backproject_2d_async(volume, sinogram, tex_cache, stream);
+    stream.synchronize();
+}
+
+template <class T, class U>
+void backproject_2d(image_2d<T> volume, measurement_2d<U> sinogram, texture_cache &tex_cache) {
+    auto stream = cuda::get_next_stream();
+    backproject_2d_sync(volume, sinogram, tex_cache, stream);
 }
 } // namespace curad::bp
