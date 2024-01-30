@@ -11,16 +11,18 @@ class image_2d : private detail::device_volume_nd<T, 2> {
   public:
     static constexpr int Dim = 2;
 
-    image_2d(T *data, vec<u64, Dim> shape)
-        : B(data, shape, vec<f32, Dim>::ones()) {}
+    image_2d(usize device, T *data, vec<u64, Dim> shape)
+        : B(device, data, shape, vec<f32, Dim>::ones()) {}
 
-    image_2d(T *data, vec<u64, Dim> shape, vec<f32, Dim> spacing)
-        : B(data, shape, vec<f32, Dim>::ones(), vec<f32, Dim>::zeros()) {}
+    image_2d(usize device, T *data, vec<u64, Dim> shape, vec<f32, Dim> spacing)
+        : B(device, data, shape, vec<f32, Dim>::ones(), vec<f32, Dim>::zeros()) {}
 
-    image_2d(T *data, vec<u64, Dim> shape, vec<f32, Dim> spacing, vec<f32, Dim> offset)
-        : B(data, shape, spacing, offset) {}
+    image_2d(usize device, T *data, vec<u64, Dim> shape, vec<f32, Dim> spacing,
+             vec<f32, Dim> offset)
+        : B(device, data, shape, spacing, offset) {}
 
     using B::device_data;
+    using B::device_id;
     using B::extent;
     using B::kernel_span;
     using B::nbytes;

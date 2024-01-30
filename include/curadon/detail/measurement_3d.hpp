@@ -14,16 +14,16 @@ class device_measurement {
     static constexpr int Dim = 3;
     static constexpr int DetectorDim = 2;
 
-    device_measurement(T *data, vec<u64, Dim> shape)
-        : device_measurement(data, shape, vec<f32, DetectorDim>::ones()) {}
+    device_measurement(usize device, T *data, vec<u64, Dim> shape)
+        : device_measurement(device, data, shape, vec<f32, DetectorDim>::ones()) {}
 
-    device_measurement(T *data, vec<u64, Dim> shape, vec<f32, DetectorDim> spacing)
-        : device_measurement(data, shape, vec<f32, DetectorDim>::ones(),
+    device_measurement(usize device, T *data, vec<u64, Dim> shape, vec<f32, DetectorDim> spacing)
+        : device_measurement(device, data, shape, vec<f32, DetectorDim>::ones(),
                              vec<f32, DetectorDim>::zeros()) {}
 
-    device_measurement(T *data, vec<u64, Dim> shape, vec<f32, DetectorDim> spacing,
+    device_measurement(usize device, T *data, vec<u64, Dim> shape, vec<f32, DetectorDim> spacing,
                        vec<f32, DetectorDim> offset)
-        : data_(data, shape)
+        : data_(device, data, shape)
         , spacing_(spacing)
         , offset_(offset)
         , extent_(detector_shape() * this->spacing())
@@ -38,17 +38,19 @@ class device_measurement {
         , roll_(0)
         , yaw_(0) {}
 
-    device_measurement(T *data, vec<u64, DetectorDim> shape, f32 DSD, f32 DSO, std::vector<f32> phi)
-        : device_measurement(data, shape, vec<f32, DetectorDim>::ones(), DSD, DSO, phi) {}
+    device_measurement(usize device, T *data, vec<u64, DetectorDim> shape, f32 DSD, f32 DSO,
+                       std::vector<f32> phi)
+        : device_measurement(device, data, shape, vec<f32, DetectorDim>::ones(), DSD, DSO, phi) {}
 
-    device_measurement(T *data, vec<u64, DetectorDim> shape, vec<f32, DetectorDim> spacing, f32 DSD,
-                       f32 DSO, std::vector<f32> phi)
-        : device_measurement(data, shape, vec<f32, DetectorDim>::ones(),
+    device_measurement(usize device, T *data, vec<u64, DetectorDim> shape,
+                       vec<f32, DetectorDim> spacing, f32 DSD, f32 DSO, std::vector<f32> phi)
+        : device_measurement(device, data, shape, vec<f32, DetectorDim>::ones(),
                              vec<f32, DetectorDim>::zeros(), DSD, DSO, phi) {}
 
-    device_measurement(T *data, vec<u64, DetectorDim> shape, vec<f32, DetectorDim> spacing,
-                       vec<f32, DetectorDim> offset, f32 DSD, f32 DSO, std::vector<f32> phi)
-        : data_(data, {shape.x(), shape.y(), phi.size()})
+    device_measurement(usize device, T *data, vec<u64, DetectorDim> shape,
+                       vec<f32, DetectorDim> spacing, vec<f32, DetectorDim> offset, f32 DSD,
+                       f32 DSO, std::vector<f32> phi)
+        : data_(device, data, {shape.x(), shape.y(), phi.size()})
         , spacing_(spacing)
         , offset_(offset)
         , extent_(shape * spacing_)
@@ -70,6 +72,8 @@ class device_measurement {
     T *device_data() { return data_.device_data(); }
 
     T const *device_data() const { return data_.device_data(); }
+
+    usize device_id() const { return data_.device_id(); }
 
     vec<u64, Dim> shape() const { return data_.shape(); }
 
@@ -122,7 +126,7 @@ class device_measurement {
     device_span_3d<T> slice(u64 offset, u64 count = 1) {
         vec<u64, Dim> new_shape{shape()[0], shape()[1], count};
         auto ptr = device_data() + offset * data_.strides()[2];
-        return device_span_3d<T>(ptr, new_shape);
+        return device_span_3d<T>(device_id(), ptr, new_shape);
     }
 
     // Builder pattern to set many variables:

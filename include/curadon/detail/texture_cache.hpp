@@ -2,19 +2,22 @@
 
 #include <cstddef>
 #include <cstring>
-#include <cuda_runtime_api.h>
-#include <driver_functions.h>
 #include <functional>
 #include <unordered_map>
 
+#include <cuda.h>
+#include <cuda_runtime.h>
+
 #include "curadon/detail/error.h"
-#include <curadon/types.hpp>
+#include "curadon/types.hpp"
 
 namespace curad {
 struct texture_config {
     texture_config() = default;
     texture_config(const texture_config &other) = default;
     texture_config(texture_config &&other) = default;
+
+    usize device_id;
 
     u64 width;
     u64 height;
@@ -25,13 +28,15 @@ struct texture_config {
     // TODO: Need members for device, precision and channels
 
     bool operator==(const texture_config &other) const {
-        return depth == other.depth && height == other.height && width == other.width &&
-               is_layered == other.is_layered;
+        return device_id == other.device_id && depth == other.depth && height == other.height &&
+               width == other.width && is_layered == other.is_layered;
     }
 };
 
 struct texture {
   public:
+    texture() = default;
+
     explicit texture(const texture_config &config)
         : config_(config) {
         cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<f32>();
@@ -62,8 +67,8 @@ struct texture {
         gpuErrchk(cudaPeekAtLastError());
     }
 
-    texture(const texture &) = delete;
-    texture &operator=(const texture &) = delete;
+    // texture(const texture &) = delete;
+    // texture &operator=(const texture &) = delete;
 
     // TODO: improve this, this should take an nd_span kind of thing
     void write(float *data) { this->write(data, config_.depth); }
@@ -104,6 +109,7 @@ struct texture {
     cudaArray_t storage_ = nullptr;
     cudaTextureObject_t texture_ = 0;
     texture_config config_;
+
     // TODO: torch-radon uses cudaSurfaceObject_t to write e.g. half-precision types
     // cudaSurfaceObject_t surface_ = 0;
 };
@@ -126,7 +132,8 @@ struct std::hash<curad::texture_config> {
         // Compute individual hash values for first,
         // second and third and combine them using XOR
         // and bit shifting:
-        auto seed = std::hash<int>{}(k.width);
+        auto seed = std::hash<::curad::usize>{}(k.device_id);
+        ::curad::detail::hash_combine(seed, k.width);
         ::curad::detail::hash_combine(seed, k.height);
         ::curad::detail::hash_combine(seed, k.depth);
         ::curad::detail::hash_combine(seed, k.is_layered);
@@ -150,7 +157,23 @@ struct std::hash<curad::texture_cache_key> {
 } // namespace std
 
 namespace curad {
-using texture_cache = std::unordered_map<texture_cache_key, texture>;
+class texture_cache {
+  public:
+    texture_cache(u64 cache_size)
+        : cache_(cache_size) {}
+
+    bool try_emplace(texture_cache_key key, texture_config config) {
+        auto [_, inserted] = cache_.try_emplace(std::move(key), std::move(config));
+        return inserted;
+    }
+
+    texture &at(const texture_cache_key &key) { return cache_.at(key); }
+
+    const texture &at(const texture_cache_key &key) const { return cache_.at(key); }
+
+  private:
+    std::unordered_map<texture_cache_key, texture> cache_;
+};
 
 inline texture_cache &get_texture_cache() {
     static texture_cache cache(10);

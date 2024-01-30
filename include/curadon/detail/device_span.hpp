@@ -71,8 +71,9 @@ class device_span_nd {
     using reference = T &;
     using const_reference = T const &;
 
-    device_span_nd(pointer data, vec<size_type, Dim> shape)
-        : data_(data, shape.hprod())
+    device_span_nd(usize device, pointer data, vec<size_type, Dim> shape)
+        : device_(device)
+        , data_(data, shape.hprod())
         , shape_(shape) {
         // By default assume row-major
         strides_type running_size = 1;
@@ -82,8 +83,10 @@ class device_span_nd {
         }
     }
 
-    device_span_nd(pointer data, vec<size_type, Dim> shape, vec<strides_type, Dim> strides)
-        : data_(data, shape.hprod())
+    device_span_nd(usize device, pointer data, vec<size_type, Dim> shape,
+                   vec<strides_type, Dim> strides)
+        : device_(device)
+        , data_(data, shape.hprod())
         , shape_(shape)
         , strides_(strides) {}
 
@@ -96,6 +99,8 @@ class device_span_nd {
     __host__ __device__ pointer device_data() { return data_.data(); }
 
     __host__ __device__ const_pointer device_data() const { return data_.data(); }
+
+    __host__ __device__ usize device_id() const { return device_; }
 
     __host__ __device__ vec<size_type, Dim> shape() const { return shape_; }
 
@@ -127,6 +132,8 @@ class device_span_nd {
     vec<size_type, Dim> shape_;
 
     vec<strides_type, Dim> strides_;
+
+    usize device_;
 };
 
 template <class T>
@@ -143,13 +150,15 @@ class device_span_3d : device_span_nd<T, 3> {
     using reference = typename B::reference;
     using const_reference = typename B::const_reference;
 
-    device_span_3d(pointer data, vec<size_type, 3> shape)
-        : B(data, shape) {}
+    device_span_3d(usize device, pointer data, vec<size_type, 3> shape)
+        : B(device, data, shape) {}
 
-    device_span_3d(pointer data, vec<size_type, 3> shape, vec<strides_type, 3> strides)
-        : B(data, shape, strides) {}
+    device_span_3d(usize device, pointer data, vec<size_type, 3> shape,
+                   vec<strides_type, 3> strides)
+        : B(device, data, shape, strides) {}
 
     using B::device_data;
+    using B::device_id;
     using B::nbytes;
     using B::ndim;
     using B::shape;
@@ -172,13 +181,15 @@ class device_span_2d : device_span_nd<T, 2> {
     using reference = typename B::reference;
     using const_reference = typename B::const_reference;
 
-    device_span_2d(pointer data, vec<size_type, 2> shape)
-        : B(data, shape) {}
+    device_span_2d(usize device, pointer data, vec<size_type, 2> shape)
+        : B(device, data, shape) {}
 
-    device_span_2d(pointer data, vec<size_type, 2> shape, vec<strides_type, 2> strides)
-        : B(data, shape, strides) {}
+    device_span_2d(usize device, pointer data, vec<size_type, 2> shape,
+                   vec<strides_type, 2> strides)
+        : B(device, data, shape, strides) {}
 
     using B::device_data;
+    using B::device_id;
     using B::nbytes;
     using B::ndim;
     using B::shape;

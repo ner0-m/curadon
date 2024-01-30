@@ -13,14 +13,14 @@ class measurement_2d {
   public:
     static constexpr int Dim = 2;
 
-    measurement_2d(T *data, u64 det_shape, u64 nangles)
-        : measurement_2d(data, det_shape, nangles, 1.f) {}
+    measurement_2d(usize device, T *data, u64 det_shape, u64 nangles)
+        : measurement_2d(device, data, det_shape, nangles, 1.f) {}
 
-    measurement_2d(T *data, u64 det_shape, u64 nangles, f32 spacing)
-        : measurement_2d(data, det_shape, nangles, spacing, 0.f) {}
+    measurement_2d(usize device, T *data, u64 det_shape, u64 nangles, f32 spacing)
+        : measurement_2d(device, data, det_shape, nangles, spacing, 0.f) {}
 
-    measurement_2d(T *data, u64 det_shape, u64 nangles, f32 spacing, f32 offset)
-        : data_(data, vec2u{det_shape, nangles})
+    measurement_2d(usize device, T *data, u64 det_shape, u64 nangles, f32 spacing, f32 offset)
+        : data_(device, data, vec2u{det_shape, nangles})
         , spacing_(spacing)
         , offset_(offset)
         , extent_(detector_shape() * this->spacing())
@@ -38,6 +38,8 @@ class measurement_2d {
     T *device_data() { return data_.device_data(); }
 
     T const *device_data() const { return data_.device_data(); }
+
+    usize device_id() const { return data_.device_id(); }
 
     vec<u64, Dim> shape() const { return data_.shape(); }
 
@@ -70,7 +72,7 @@ class measurement_2d {
     device_span_2d<T> slice(u64 offset, u64 count = 1) {
         vec<u64, Dim> new_shape{detector_shape(), count};
         auto ptr = device_data() + offset * data_.strides()[1];
-        return device_span_2d<T>(ptr, new_shape);
+        return device_span_2d<T>(device_id(), ptr, new_shape);
     }
 
     // Builder pattern to set many variables:

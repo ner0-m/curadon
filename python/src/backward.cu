@@ -33,13 +33,20 @@ void backward_3d_cuda(
     nb::ndarray<curad::f32, nb::shape<3>, nb::device::cpu> det_rotation, curad::f32 DSO,
     curad::f32 DSD, curad::f32 COR) {
 
+    if (volume.device_id() != sinogram.device_id()) {
+        throw nb::attribute_error("Volume and sinogram must be on the same device");
+    }
+
+    auto vol_dev_id = volume.device_id();
+    auto sino_dev_id = sinogram.device_id();
+
     // Never forgetti, Python calls (z, y, x), we do (x, y, z)
     curad::vec3u curad_vol_shape{vol_shape(2), vol_shape(1), vol_shape(0)};
     curad::vec3f curad_vol_spacing{vol_spacing(2), vol_spacing(1), vol_spacing(0)};
     curad::vec3f curad_vol_offset{vol_offset(2), vol_offset(1), vol_offset(0)};
 
-    curad::device_volume<float> vol_span(volume.data(), curad_vol_shape, curad_vol_spacing,
-                                         curad_vol_offset);
+    curad::device_volume<float> vol_span(vol_dev_id, volume.data(), curad_vol_shape,
+                                         curad_vol_spacing, curad_vol_offset);
 
     // never forgetti, python calls (v, u), we do (u, v)
     curad::vec3u curad_det_shape{det_shape(1), det_shape(0), phi.size()};
@@ -50,8 +57,8 @@ void backward_3d_cuda(
     std::vector<float> cpu_theta(theta.data(), theta.data() + theta.size());
     std::vector<float> cpu_phi(psi.data(), psi.data() + psi.size());
 
-    curad::device_measurement<float> sino_span(sinogram.data(), curad_det_shape, curad_det_spacing,
-                                               curad_det_offset);
+    curad::device_measurement<float> sino_span(sino_dev_id, sinogram.data(), curad_det_shape,
+                                               curad_det_spacing, curad_det_offset);
     sino_span.set_angles(cpu_psi, cpu_theta, cpu_phi);
     sino_span.set_distance_source_to_detector(DSD);
     sino_span.set_distance_source_to_object(DSO);
@@ -81,19 +88,26 @@ void backward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda,
         throw nb::type_error("Input sinogram must for of type float32");
     }
 
+    if (vol.device_id() != sino.device_id()) {
+        throw nb::attribute_error("Volume and sinogram must be on the same device");
+    }
+
+    auto vol_dev_id = vol.device_id();
+    auto sino_dev_id = sino.device_id();
+
     // Never forgetti, Python calls (z, y, x), we do (x, y, z)
     curad::vec2u curad_vol_shape{vol_shape(1), vol_shape(0)};
     curad::vec2f curad_vol_spacing{vol_spacing(1), vol_spacing(0)};
     curad::vec2f curad_vol_offset{vol_offset(1), vol_offset(0)};
     curad::vec2f curad_vol_extent = curad_vol_shape * curad_vol_spacing;
 
-    curad::image_2d<curad::f32> vol_span((curad::f32 *)vol.data(), curad_vol_shape,
+    curad::image_2d<curad::f32> vol_span(vol_dev_id, (curad::f32 *)vol.data(), curad_vol_shape,
                                          curad_vol_spacing, curad_vol_offset);
 
     const auto nangles = angles.size();
 
-    curad::measurement_2d<curad::f32> sino_span((curad::f32 *)sino.data(), det_shape, nangles,
-                                                det_spacing, det_offset);
+    curad::measurement_2d<curad::f32> sino_span(sino_dev_id, (curad::f32 *)sino.data(), det_shape,
+                                                nangles, det_spacing, det_offset);
     curad::span<curad::f32> angles_span(angles.data(), angles.size());
     sino_span.set_angles(angles_span);
     sino_span.set_distance_source_to_object(DSO);
