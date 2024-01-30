@@ -64,12 +64,11 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
     const f32 scaled_real_x = real_x * inv_u_spacing;
     const f32 scaled_real_y = real_y * inv_u_spacing;
 
-    f32 projf = 0.5f; // projected index in float (shifted by 0.5)
     f32 accum = 0.0f;
 
 #pragma unroll(16)
     for (int proj_idx = 0; proj_idx < num_projections_per_kernel_2d; proj_idx++) {
-        if (proj_idx + cur_projection > nangles) {
+        if (proj_idx + cur_projection >= nangles) {
             break;
         }
 
@@ -82,9 +81,7 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
         const f32 dist_denom = __fdividef(DSD, denominator);
 
         const f32 u = fmaf(cos * scaled_real_x + sin * scaled_real_y, dist_denom, det_extend_u);
-
-        accum += tex1DLayered<float>(texture, u, projf) * dist_denom;
-        projf += 1.0f;
+        accum += tex1DLayered<float>(texture, u, proj_idx) * dist_denom;
     }
 
     volume[x + vol_shape[0] * y] += accum * inv_u_spacing;

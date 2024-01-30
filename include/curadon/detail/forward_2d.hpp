@@ -39,9 +39,8 @@ __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_sh
     const auto idx_u = blockIdx.x * blockDim.x + threadIdx.x;
 
     const auto proj_idx = threadIdx.y + blockIdx.y * blockDim.y;
-    const auto global_proj_idx = proj_idx + cur_proj;
 
-    if (global_proj_idx >= num_projections && idx_u >= det_shape) {
+    if (proj_idx >= num_projections || idx_u >= det_shape) {
         return;
     }
 
