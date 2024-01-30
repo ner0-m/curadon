@@ -20,7 +20,7 @@
 
 namespace curad::bp {
 namespace kernel {
-static constexpr i64 num_projections_per_kernel_2d = 512;
+static constexpr i64 num_projections_per_kernel_2d = 1024;
 
 template <typename T>
 __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_spacing,
@@ -105,7 +105,10 @@ void backproject_2d_async(image_2d<T> volume, measurement_2d<U> sino, texture_ca
     auto angles = sino.angles();
     auto nangles = sino.nangles();
 
-    texture_config tex_config{det_shape, 0, kernel::num_projections_per_kernel_2d, true};
+    texture_config tex_config{sino.device_id(), det_shape, 0, kernel::num_projections_per_kernel_2d,
+                              true};
+
+    auto event = cuda::get_next_event();
 
     const int num_kernel_calls =
         utils::round_up_division(nangles, kernel::num_projections_per_kernel_2d);
@@ -134,13 +137,15 @@ void backproject_2d_async(image_2d<T> volume, measurement_2d<U> sino, texture_ca
         int block_x = utils::round_up_division(vol_shape[0], divx);
         int block_y = utils::round_up_division(vol_shape[1], divy);
 
+        auto loop_stream = cuda::get_next_stream();
+
         dim3 num_blocks(block_x, block_y);
-        kernel::backward_2d<<<num_blocks, threads_per_block>>>(
+        kernel::backward_2d<<<num_blocks, threads_per_block, 0, loop_stream>>>(
             volume.device_data(), vol_shape, vol_spacing, vol_offset, tex.tex(), det_shape,
             det_spacing, DSD, DSO, angles.data(), proj_idx, nangles);
 
-        gpuErrchk(cudaPeekAtLastError());
-        gpuErrchk(cudaDeviceSynchronize());
+        event.record(loop_stream);
+        stream.wait_for_event(event);
     }
 }
 

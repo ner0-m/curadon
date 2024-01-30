@@ -25,7 +25,7 @@ namespace curad::fp {
 namespace kernel {
 
 static constexpr u64 pixels_u_per_block_2d = 16;
-static constexpr u64 num_projections_per_kernel_2d = 128;
+static constexpr u64 num_projections_per_kernel_2d = 1024;
 
 __constant__ vec2f dev_u_origins_2d[num_projections_per_kernel_2d];
 __constant__ vec2f dev_delta_us_2d[num_projections_per_kernel_2d];
@@ -173,7 +173,7 @@ void forward_2d_async(image_2d<T> volume, measurement_2d<U> sinogram, texture_ca
     auto vol_spacing = volume.spacing();
     auto vol_offset = volume.offset();
 
-    texture_config tex_config{vol_shape[0], vol_shape[1], 0, false};
+    texture_config tex_config{volume.device_id(), vol_shape[0], vol_shape[1], 0, false};
     texture_cache_key key = {static_cast<void *>(volume.device_data()), tex_config};
 
     auto inserted = tex_cache.try_emplace(key, tex_config);
@@ -185,6 +185,8 @@ void forward_2d_async(image_2d<T> volume, measurement_2d<U> sinogram, texture_ca
 
     const int num_kernel_calls =
         utils::round_up_division(nangles, kernel::num_projections_per_kernel_2d);
+
+    auto event = cuda::get_next_event();
 
     for (int i = 0; i < num_kernel_calls; ++i) {
         const auto proj_idx = i * kernel::num_projections_per_kernel_2d;
