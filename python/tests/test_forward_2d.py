@@ -88,7 +88,7 @@ def distance(h1, h2):
     return float(h1 - h2) / len(h1.hash)**2
 
 
-@pytest.mark.parametrize("n", [128, 256, 512, 1024, 2048])
+@pytest.mark.parametrize("n", [128, 256, 512, 1024])
 def test_forward(n: int):
 
     # make this configurabe

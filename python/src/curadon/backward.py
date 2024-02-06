@@ -28,21 +28,7 @@ def backward(sinogram: torch.cuda.FloatTensor, geom: Union[FanGeometry, ConeGeom
             f"Input volume shape does not fit geometry: got {volume.shape}, expected {geom.sinogram_shape()}")
 
     if isinstance(geom, FanGeometry):
-        _C.backward_2d(volume,
-                       geom.vol_shape,
-                       geom.vol_spacing,
-                       geom.vol_offset,
-                       sinogram,
-                       geom.angles,
-                       geom.det_shape,
-                       geom.det_spacing,
-                       geom.det_offset,
-                       geom.det_rotation,
-                       geom.DSO,
-                       geom.DSD,
-                       geom.COR,
-                       geom.tex_cache
-                       )
+        _C.backward_2d(volume, sinogram, geom.plan)
         return volume
     if isinstance(geom, ConeGeometry):
         _C.backward_3d(volume,

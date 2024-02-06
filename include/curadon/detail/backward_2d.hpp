@@ -3,30 +3,26 @@
 #include <cstdio>
 #include <cstring>
 #include <cuda_runtime_api.h>
-#include <iostream>
 #include <texture_indirect_functions.h>
 #include <vector>
 
 #include <thrust/device_vector.h>
 
+#include "curadon/detail/device_span.hpp"
 #include "curadon/detail/error.h"
-#include "curadon/detail/image_2d.hpp"
-#include "curadon/detail/measurement_2d.hpp"
-#include "curadon/detail/rotation.hpp"
-#include "curadon/detail/texture_cache.hpp"
+#include "curadon/detail/plan/plan_2d.hpp"
 #include "curadon/detail/utils.hpp"
 #include "curadon/detail/vec.hpp"
 #include "curadon/pool.hpp"
 
 namespace curad::bp {
 namespace kernel {
-static constexpr i64 num_projections_per_kernel_2d = 1024;
 
 template <typename T>
 __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_spacing,
                             vec2f vol_offset, cudaTextureObject_t texture, u64 det_shape,
                             f32 det_spacing, f32 DSD, f32 DSO, f32 *__restrict__ angles,
-                            u64 cur_projection, u64 nangles) {
+                            u64 cur_projection, u64 nangles, u64 num_projections) {
     // Calculate image coordinates
     const u64 x = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -45,10 +41,10 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
     }
 
     // keep sin and cos packed together to save one memory load in the main loop
-    __shared__ float2 sincos[num_projections_per_kernel_2d];
+    extern __shared__ float2 sincos[];
 
     for (int i = tid; i < nangles; i += blockDim.x * blockDim.y) {
-        if (i < num_projections_per_kernel_2d) {
+        if (i < num_projections) {
             float2 tmp;
             tmp.x = -__sinf(angles[cur_projection + i]);
             tmp.y = __cosf(angles[cur_projection + i]);
@@ -67,7 +63,7 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
     f32 accum = 0.0f;
 
 #pragma unroll(16)
-    for (int proj_idx = 0; proj_idx < num_projections_per_kernel_2d; proj_idx++) {
+    for (int proj_idx = 0; proj_idx < num_projections; proj_idx++) {
         if (proj_idx + cur_projection >= nangles) {
             break;
         }
@@ -89,46 +85,32 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
 } // namespace kernel
 
 template <class T, class U>
-void backproject_2d_async(image_2d<T> volume, measurement_2d<U> sino, texture_cache &tex_cache,
+void backproject_2d_async(device_span_2d<T> volume, device_span_2d<U> sino, forward_plan_2d &plan,
                           cuda::stream_view stream) {
-    auto vol_shape = volume.shape();
-    auto vol_extent = volume.extent();
-    auto vol_spacing = volume.spacing();
-    auto vol_offset = volume.offset();
+    auto vol_shape = plan.vol_shape();
 
     auto sino_ptr = sino.device_data();
-    auto det_shape = sino.detector_shape();
-    auto det_spacing = sino.spacing();
-    auto DSD = sino.distance_source_to_detector();
-    auto DSO = sino.distance_source_to_object();
-    auto source = sino.source();
-    auto angles = sino.angles();
-    auto nangles = sino.nangles();
-
-    texture_config tex_config{sino.device_id(), det_shape, 0, kernel::num_projections_per_kernel_2d,
-                              true};
+    auto det_count = plan.det_count();
+    auto nangles = plan.nangles();
 
     auto event = cuda::get_next_event();
 
     const int num_kernel_calls =
-        utils::round_up_division(nangles, kernel::num_projections_per_kernel_2d);
+        utils::round_up_division(nangles, plan.num_projections_per_kernel());
+
+    auto &tex = plan.backward_tex();
+
     for (int i = 0; i < num_kernel_calls; ++i) {
-        const auto proj_idx = i * kernel::num_projections_per_kernel_2d;
+        const auto proj_idx = i * plan.num_projections_per_kernel();
         const auto num_projections_left = nangles - proj_idx;
         const auto num_projections =
-            std::min<int>(kernel::num_projections_per_kernel_2d, num_projections_left);
+            std::min<int>(plan.num_projections_per_kernel(), num_projections_left);
 
         // Copy projection data necessary for the next kernel to cuda array
-        const auto offset = proj_idx * det_shape;
+        const auto offset = proj_idx * det_count;
         auto cur_proj_ptr = sino_ptr + offset;
 
-        texture_cache_key key = {static_cast<void *>(cur_proj_ptr), tex_config};
-        auto inserted = tex_cache.try_emplace(key, tex_config);
-        auto &tex = tex_cache.at(key);
-
-        if (inserted) {
-            tex.write(cur_proj_ptr, num_projections);
-        }
+        tex.write(cur_proj_ptr, num_projections);
 
         int divx = 16;
         int divy = 16;
@@ -140,9 +122,13 @@ void backproject_2d_async(image_2d<T> volume, measurement_2d<U> sino, texture_ca
         auto loop_stream = cuda::get_next_stream();
 
         dim3 num_blocks(block_x, block_y);
-        kernel::backward_2d<<<num_blocks, threads_per_block, 0, loop_stream>>>(
-            volume.device_data(), vol_shape, vol_spacing, vol_offset, tex.tex(), det_shape,
-            det_spacing, DSD, DSO, angles.data(), proj_idx, nangles);
+        kernel::backward_2d<<<num_blocks, threads_per_block,
+                              sizeof(f32) * plan.num_projections_per_kernel(), loop_stream>>>(
+            volume.device_data(), plan.vol_shape(), plan.vol_spacing(), plan.vol_offset(),
+            tex.tex(), det_count, plan.det_spacing(), plan.DSD(), plan.DSO(), plan.angles().data(),
+            proj_idx, nangles, plan.num_projections_per_kernel());
+
+        gpuErrchk(cudaGetLastError());
 
         event.record(loop_stream);
         stream.wait_for_event(event);
@@ -150,15 +136,15 @@ void backproject_2d_async(image_2d<T> volume, measurement_2d<U> sino, texture_ca
 }
 
 template <class T, class U>
-void backproject_2d_sync(image_2d<T> volume, measurement_2d<U> sinogram, texture_cache &tex_cache,
-                         cuda::stream_view stream) {
-    backproject_2d_async(volume, sinogram, tex_cache, stream);
+void backproject_2d_sync(device_span_2d<T> volume, device_span_2d<U> sinogram,
+                         forward_plan_2d &plan, cuda::stream_view stream) {
+    backproject_2d_async(volume, sinogram, plan, stream);
     stream.synchronize();
 }
 
 template <class T, class U>
-void backproject_2d(image_2d<T> volume, measurement_2d<U> sinogram, texture_cache &tex_cache) {
+void backproject_2d(device_span_2d<T> volume, device_span_2d<U> sinogram, forward_plan_2d &plan) {
     auto stream = cuda::get_next_stream();
-    backproject_2d_sync(volume, sinogram, tex_cache, stream);
+    backproject_2d_sync(volume, sinogram, plan, stream);
 }
 } // namespace curad::bp

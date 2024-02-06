@@ -188,6 +188,12 @@ class device_span_2d : device_span_nd<T, 2> {
                    vec<strides_type, 2> strides)
         : B(device, data, shape, strides) {}
 
+    device_span_2d<T> slice(u64 offset, u64 count = 1) {
+        vec<u64, 2> new_shape{shape()[0], count};
+        auto ptr = device_data() + offset * strides()[1];
+        return device_span_2d<T>(device_id(), ptr, new_shape);
+    }
+
     using B::device_data;
     using B::device_id;
     using B::nbytes;

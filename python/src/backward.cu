@@ -71,14 +71,8 @@ void backward_3d_cuda(
 }
 
 void backward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> vol,
-                      nb::ndarray<curad::u64, nb::shape<2>, nb::device::cpu> vol_shape,
-                      nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> vol_spacing,
-                      nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> vol_offset,
                       nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
-                      nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cuda> angles,
-                      curad::u64 det_shape, curad::f32 det_spacing, curad::f32 det_offset,
-                      curad::f32 det_rotation, curad::f32 DSO, curad::f32 DSD, curad::f32 COR,
-                      curad::texture_cache &tex_cache) {
+                      curad::forward_plan_2d &plan) {
     // TODO: make dispatch possible based on types
     if (vol.dtype() != nb::dtype<curad::f32>()) {
         throw nb::type_error("Input image must for of type float32");
@@ -92,28 +86,19 @@ void backward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda,
         throw nb::attribute_error("Volume and sinogram must be on the same device");
     }
 
-    auto vol_dev_id = vol.device_id();
-    auto sino_dev_id = sino.device_id();
+    if (vol.device_id() != plan.device_id()) {
+        throw nb::attribute_error("Volume and plan are not on the same device");
+    }
 
-    // Never forgetti, Python calls (z, y, x), we do (x, y, z)
-    curad::vec2u curad_vol_shape{vol_shape(1), vol_shape(0)};
-    curad::vec2f curad_vol_spacing{vol_spacing(1), vol_spacing(0)};
-    curad::vec2f curad_vol_offset{vol_offset(1), vol_offset(0)};
-    curad::vec2f curad_vol_extent = curad_vol_shape * curad_vol_spacing;
+    if (sino.device_id() != plan.device_id()) {
+        throw nb::attribute_error("Sinogram and plan are not on the same device");
+    }
 
-    curad::image_2d<curad::f32> vol_span(vol_dev_id, (curad::f32 *)vol.data(), curad_vol_shape,
-                                         curad_vol_spacing, curad_vol_offset);
+    curad::usize device = vol.device_id();
 
-    const auto nangles = angles.size();
+    curad::device_span_2d<curad::f32> vol_span(device, (curad::f32 *)vol.data(), plan.vol_shape());
+    curad::device_span_2d<curad::f32> sino_span(device, (curad::f32 *)sino.data(),
+                                                {plan.det_count(), plan.nangles()});
 
-    curad::measurement_2d<curad::f32> sino_span(sino_dev_id, (curad::f32 *)sino.data(), det_shape,
-                                                nangles, det_spacing, det_offset);
-    curad::span<curad::f32> angles_span(angles.data(), angles.size());
-    sino_span.set_angles(angles_span);
-    sino_span.set_distance_source_to_object(DSO);
-    sino_span.set_distance_source_to_detector(DSD);
-    sino_span.set_center_of_rotation_correction(COR);
-    sino_span.set_pitch(det_rotation);
-
-    curad::bp::backproject_2d(vol_span, sino_span, tex_cache);
+    curad::bp::backproject_2d(vol_span, sino_span, plan);
 }

@@ -68,6 +68,7 @@ nanobind_add_module(
   src/forward.cu
   src/backward.cu
   src/stream.cu
+  src/plan.cu
   src/texture.cu)
 
 target_include_directories(
