@@ -71,18 +71,24 @@ void forward_3d_cuda(
     curad::fp::forward_3d(vol_span, sino_span);
 }
 
+template <class T, class U>
+void forward_2d_cuda_typed(
+    nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> vol,
+    nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
+    curad::forward_plan_2d &plan) {
+
+    curad::usize device = vol.device_id();
+
+    curad::device_span_2d<T> vol_span(device, (T *)vol.data(), plan.vol_shape());
+    curad::device_span_2d<U> sino_span(device, (U *)sino.data(),
+                                       {plan.det_count(), plan.nangles()});
+
+    curad::fp::forward_2d<T, U>(vol_span, sino_span, plan);
+}
+
 void forward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> vol,
                      nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
                      curad::forward_plan_2d &plan) {
-    // TODO: make dispatch possible based on types
-    if (vol.dtype() != nb::dtype<curad::f32>()) {
-        throw nb::type_error("Input image must for of type float32");
-    }
-
-    if (sino.dtype() != nb::dtype<curad::f32>()) {
-        throw nb::type_error("Input sinogram must for of type float32");
-    }
-
     if (vol.device_id() != sino.device_id()) {
         throw nb::attribute_error("Volume and sinogram must be on the same device");
     }
@@ -95,10 +101,11 @@ void forward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, 
         throw nb::attribute_error("Sinogram and plan are not on the same device");
     }
 
-    curad::usize device = vol.device_id();
-
-    curad::device_span_2d<curad::f32> vol_span(device, (curad::f32 *)vol.data(), plan.vol_shape());
-    curad::device_span_2d<curad::f32> sino_span(device, (curad::f32 *)sino.data(), {plan.det_count(), plan.nangles()});
-
-    curad::fp::forward_2d(vol_span, sino_span, plan);
+    if (vol.dtype() == nb::dtype<curad::f32>()) {
+        if (sino.dtype() == nb::dtype<curad::f32>()) {
+            forward_2d_cuda_typed<curad::f32, curad::f32>(vol, sino, plan);
+        }
+    } else {
+        throw nb::type_error("Only float32 is supported");
+    }
 }

@@ -8,7 +8,7 @@ from .geometry import FanGeometry, ConeGeometry
 
 
 def forward(volume: torch.cuda.FloatTensor, geom: Union[FanGeometry, ConeGeometry], sinogram: torch.cuda.FloatTensor = None):
-    if not isinstance(volume, torch.cuda.FloatTensor) or volume.is_cuda is False or volume.dtype != torch.float32:
+    if not torch.is_floating_point(volume) or not volume.is_cuda:
         raise TypeError(
             "Input volume must be a float tensor stored in CUDA memory")
     if np.any(volume.shape != geom.vol_shape):
@@ -18,7 +18,7 @@ def forward(volume: torch.cuda.FloatTensor, geom: Union[FanGeometry, ConeGeometr
     if sinogram is None:
         sinogram = torch.zeros(*geom.sinogram_shape(),
                                dtype=torch.float32, device=volume.device)
-    if not isinstance(volume, torch.cuda.FloatTensor) or volume.is_cuda is False or sinogram.dtype != torch.float32:
+    if not torch.is_floating_point(sinogram) or not sinogram.is_cuda:
         raise TypeError(
             "Input sinogram must be a float tensor stored in CUDA memory")
     if sinogram.shape != geom.sinogram_shape():
