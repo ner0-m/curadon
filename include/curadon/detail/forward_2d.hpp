@@ -15,13 +15,8 @@
 
 #include <cuda_runtime_api.h>
 
-// TODO: remove
-#include <numeric>
-
 namespace curad::fp {
 namespace kernel {
-
-static constexpr u64 pixels_u_per_block_2d = 16;
 
 template <class T>
 __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_shape,
@@ -66,6 +61,7 @@ __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_sh
     auto v = rd / fmax(fabs(rd.x()), fabs(rd.y()));
 
     f32 accumulator = 0.f;
+
     for (int j = 0; j < n_steps; j++) {
         accumulator += tex2D<f32>(tex, ro.x(), ro.y());
         ro += v;
@@ -96,10 +92,9 @@ void forward_2d_async(device_span_2d<T> volume, device_span_2d<U> sinogram, forw
         const auto num_projections =
             std::min<int>(plan.num_projections_per_kernel(), num_projections_left);
 
-        const u64 div_u = kernel::pixels_u_per_block_2d;
-        dim3 grid(utils::round_up_division(det_shape, div_u),
-                  utils::round_up_division(num_projections, div_u));
-        dim3 block(div_u, div_u);
+        dim3 block(plan.forward_block_x, plan.forward_block_y);
+        dim3 grid(utils::round_up_division(det_shape, block.x),
+                  utils::round_up_division(num_projections, block.y));
 
         auto loop_stream = cuda::get_next_stream();
 
@@ -108,6 +103,8 @@ void forward_2d_async(device_span_2d<T> volume, device_span_2d<U> sinogram, forw
             sino_slice, plan.vol_shape(), plan.vol_spacing(), plan.vol_offset(), tex.tex(),
             det_shape, proj_idx, num_projections, plan.u_origins(), plan.delta_us(),
             plan.sources());
+
+        gpuErrchk(cudaGetLastError());
 
         event.record(loop_stream);
         stream.wait_for_event(event);

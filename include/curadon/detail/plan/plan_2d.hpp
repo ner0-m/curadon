@@ -145,6 +145,10 @@ class forward_plan_2d {
         return {thrust::raw_pointer_cast(delta_us_.data()), delta_us_.size()};
     }
 
+    u64 forward_block_x = 16;
+
+    u64 forward_block_y = 16;
+
   private:
     void precompute() {
         vec2f init_det_origin{-det_extent_ / 2.f + det_spacing_ * .5f, -DOD()};
