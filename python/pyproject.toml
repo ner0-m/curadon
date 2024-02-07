@@ -26,7 +26,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "scikit-build-core >=0.7.0",
-    "nanobind >=1.8.0"
+    "nanobind >=1.8.0",
+    "pyproject_metadata",
+    "pathspec",
 ]
 benchmark = [
     "phantominator>=0.7.0",
