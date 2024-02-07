@@ -244,8 +244,6 @@ class ConeGeometry:
         else:
             self.vol_offset = np.zeros(self.vol_shape.shape)
 
-        self.tex_cache = _C.texture_cache(8)
-
     def sinogram_shape(self):
         return (self.nangles, *self.det_shape)
 

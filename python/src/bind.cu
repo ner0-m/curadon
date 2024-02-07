@@ -2,7 +2,6 @@
 #include <nanobind/ndarray.h>
 
 #include "curadon/detail/plan/plan_2d.hpp"
-#include "curadon/detail/texture_cache.hpp"
 #include "curadon/types.hpp"
 
 namespace nb = nanobind;
@@ -47,15 +46,11 @@ void backward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda,
                       nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
                       curad::forward_plan_2d &plan);
 
-void add_texture(nb::module_ &m);
-
 void add_stream(nb::module_ &m);
 
 void add_plan(nb::module_ &m);
 
 NB_MODULE(curadon_ext, m) {
-    add_texture(m);
-
     add_stream(m);
 
     add_plan(m);

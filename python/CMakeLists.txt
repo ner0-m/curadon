@@ -68,8 +68,7 @@ nanobind_add_module(
   src/forward.cu
   src/backward.cu
   src/stream.cu
-  src/plan.cu
-  src/texture.cu)
+  src/plan.cu)
 
 target_include_directories(
   curadon_ext PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>

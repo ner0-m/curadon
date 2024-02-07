@@ -2,7 +2,6 @@
 #include <nanobind/ndarray.h>
 
 #include "curadon/backward.hpp"
-#include "curadon/detail/texture_cache.hpp"
 #include "curadon/detail/vec.hpp"
 #include "curadon/image.hpp"
 #include "curadon/measurement.hpp"
