@@ -3,64 +3,11 @@
 #include "curadon/detail/device_span.hpp"
 #include "curadon/detail/error.h"
 
+#include <cuda.h>
+#include <cuda_runtime.h>
+
 #include <cstring>
 #include <cuda_runtime.h>
-#include <iostream>
-
-namespace curad::detail {
-inline cudaArray_t allocate_cuarray(std::size_t width, std::size_t height, std::size_t depth) {
-    const cudaExtent extent_alloc = make_cudaExtent(width, height, depth);
-    cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<float>();
-    cudaArray_t array;
-    cudaMalloc3DArray(&array, &channelDesc, extent_alloc);
-    gpuErrchk(cudaPeekAtLastError());
-
-    return array;
-}
-
-// TODO: this is very specific currently, make it more configurable (without exposing
-// basically the same API again ;D)
-inline void bind_texture_to_array(cudaTextureObject_t *tex, cudaArray_t array_cu) {
-    cudaResourceDesc texRes;
-    memset(&texRes, 0, sizeof(cudaResourceDesc));
-    texRes.resType = cudaResourceTypeArray;
-    texRes.res.array.array = array_cu;
-    cudaTextureDesc texDescr;
-    memset(&texDescr, 0, sizeof(cudaTextureDesc));
-    texDescr.normalizedCoords = false;
-    texDescr.filterMode = cudaFilterModeLinear;
-    texDescr.addressMode[0] = cudaAddressModeBorder;
-    texDescr.addressMode[1] = cudaAddressModeBorder;
-    texDescr.addressMode[2] = cudaAddressModeBorder;
-    texDescr.readMode = cudaReadModeElementType;
-
-    cudaCreateTextureObject(tex, &texRes, &texDescr, NULL);
-    gpuErrchk(cudaPeekAtLastError());
-}
-
-template <class T>
-inline void copy_projections_to_array(device_span_3d<T> data, cudaArray_t array_cu) {
-
-    auto ptr = data.device_data();
-    const auto width = data.shape()[0];
-    const auto height = data.shape()[1];
-    const auto width_bytes = sizeof(T) * width;
-    const auto num_projections = data.shape()[2];
-
-    cudaMemcpy3DParms copyParams = {0};
-
-    copyParams.srcPtr = make_cudaPitchedPtr((void *)ptr, width_bytes, width, height);
-
-    const cudaExtent extent = make_cudaExtent(width, height, num_projections);
-    gpuErrchk(cudaPeekAtLastError());
-    copyParams.dstArray = array_cu;
-    copyParams.extent = extent;
-    copyParams.kind = cudaMemcpyDefault;
-    cudaMemcpy3DAsync(&copyParams, 0); // TODO: use stream pool
-    cudaStreamSynchronize(0);
-    gpuErrchk(cudaPeekAtLastError());
-}
-} // namespace curad::detail
 
 namespace curad {
 struct texture_config {
@@ -90,7 +37,9 @@ struct texture {
 
     explicit texture(const texture_config &config)
         : config_(config) {
-        cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<f32>();
+        cudaChannelFormatDesc channelDesc;
+        channelDesc = cudaCreateChannelDesc<f32>();
+
         auto allocation_type = config_.is_layered ? cudaArrayLayered : cudaArrayDefault;
 
         const cudaExtent extent = make_cudaExtent(config_.width, config_.height, config_.depth);
@@ -115,7 +64,8 @@ struct texture {
 
         // Create texture object
         gpuErrchk(cudaCreateTextureObject(&texture_, &resDesc, &texDesc, NULL));
-        gpuErrchk(cudaPeekAtLastError());
+
+        gpuErrchk(cudaCreateSurfaceObject(&surface_, &resDesc));
     }
 
     // texture(const texture &) = delete;
@@ -131,12 +81,15 @@ struct texture {
         cpy_params.srcPos = make_cudaPos(0, 0, 0);
         cpy_params.dstPos = make_cudaPos(0, 0, 0);
 
-        cpy_params.srcPtr = make_cudaPitchedPtr(data, config_.width * sizeof(float), config_.width,
-                                                std::max<u64>(config_.height, 1));
+        const auto width = config_.width;
+        const auto size = width * sizeof(float);
+
+        cpy_params.srcPtr =
+            make_cudaPitchedPtr(data, size, width, std::max<u64>(config_.height, 1));
         cpy_params.dstArray = this->storage_;
 
-        cpy_params.extent = make_cudaExtent(config_.width, std::max<u64>(config_.height, 1),
-                                            std::max<u64>(depth, 1));
+        cpy_params.extent =
+            make_cudaExtent(width, std::max<u64>(config_.height, 1), std::max<u64>(depth, 1));
 
         // cpy_params.kind = cudaMemcpyDefault;
         cpy_params.kind = cudaMemcpyDeviceToDevice;
@@ -162,6 +115,6 @@ struct texture {
     texture_config config_;
 
     // TODO: torch-radon uses cudaSurfaceObject_t to write e.g. half-precision types
-    // cudaSurfaceObject_t surface_ = 0;
+    cudaSurfaceObject_t surface_ = 0;
 };
 } // namespace curad
