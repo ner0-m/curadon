@@ -64,7 +64,7 @@ nanobind_add_module(
   # NVCC doesn't like -Os
   NOMINSIZE
   # Source code goes here
-  src/bind.cu
+  src/bind.cpp
   src/forward.cu
   src/backward.cu
   src/stream.cu

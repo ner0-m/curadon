@@ -17,6 +17,8 @@
 
 namespace nb = nanobind;
 
+using namespace nb::literals;
+
 void forward_3d_cuda(
     nb::ndarray<curad::f32, nb::shape<nb::any, nb::any, nb::any>, nb::device::cuda, nb::c_contig>
         volume,
@@ -108,4 +110,12 @@ void forward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, 
     } else {
         throw nb::type_error("Only float32 is supported");
     }
+}
+
+void add_forward(nb::module_ &m) {
+    m.def("forward_2d", &forward_2d_cuda, "volume"_a, "sinogram"_a, "plan"_a);
+
+    m.def("forward_3d", &forward_3d_cuda, "x"_a, "vol_shape"_a, "vol_spacing"_a, "vol_offset"_a,
+          "sinogram"_a, "psi"_a, "theta"_a, "phi"_a, "sino_shape"_a, "det_spacing"_a,
+          "det_offset"_a, "det_rotation"_a, "DSO"_a, "DSD"_a, "COR"_a);
 }

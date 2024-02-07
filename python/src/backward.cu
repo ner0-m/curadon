@@ -15,6 +15,8 @@
 
 namespace nb = nanobind;
 
+using namespace nb::literals;
+
 void backward_3d_cuda(
     nb::ndarray<curad::f32, nb::shape<nb::any, nb::any, nb::any>, nb::device::cuda, nb::c_contig>
         volume,
@@ -100,4 +102,12 @@ void backward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda,
                                                 {plan.det_count(), plan.nangles()});
 
     curad::bp::backproject_2d(vol_span, sino_span, plan);
+}
+
+void add_backward(nb::module_ &m) {
+    m.def("backward_2d", &backward_2d_cuda, "volume"_a, "sinogram"_a, "plan"_a);
+
+    m.def("backward_3d", &backward_3d_cuda, "x"_a, "vol_shape"_a, "vol_spacing"_a, "vol_offset"_a,
+          "sinogram"_a, "phi"_a, "theta"_a, "psi"_a, "sino_shape"_a, "det_spacing"_a,
+          "det_offset"_a, "det_rotation"_a, "DSO"_a, "DSD"_a, "COR"_a);
 }
