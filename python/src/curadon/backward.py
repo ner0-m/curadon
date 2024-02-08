@@ -8,21 +8,22 @@ from .geometry import FanGeometry, ConeGeometry
 
 
 def backward(sinogram: torch.cuda.FloatTensor, geom: Union[FanGeometry, ConeGeometry], volume: torch.cuda.FloatTensor = None):
-    import torch
-
-    if not isinstance(sinogram, torch.cuda.FloatTensor) or sinogram.is_cuda is False or sinogram.dtype != torch.float32:
+    if not torch.is_floating_point(sinogram) or not sinogram.is_cuda:
         raise TypeError(
-            "Input sinogram must be a float32 tensor stored in CUDA memory")
-    if sinogram.shape != geom.sinogram_shape():
+            "Input sinogram must be a float tensor stored in CUDA memory")
+
+    if np.any(sinogram.shape != geom.sinogram_shape()):
         raise ValueError(
             f"Input sinogram shape does not fit geometry: got {sinogram.shape}, expected {geom.sinogram_shape()}")
 
+    # TODO: remove this?
     if volume is None:
         volume = torch.zeros(
             *geom.vol_shape, dtype=torch.float32, device=sinogram.device)
-    if not isinstance(volume, torch.cuda.FloatTensor) or volume.is_cuda is False or volume.dtype != torch.float32:
+
+    if not torch.is_floating_point(volume) or not volume.is_cuda:
         raise TypeError(
-            "Input volume must be a float32 tensor stored in CUDA memory")
+            "Input volume must be a float tensor stored in CUDA memory")
     if np.any(volume.shape != geom.vol_shape):
         raise ValueError(
             f"Input volume shape does not fit geometry: got {volume.shape}, expected {geom.sinogram_shape()}")

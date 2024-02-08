@@ -67,7 +67,7 @@ __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_sh
         ro += v;
     }
 
-    const float n = hypot(v.x() * vol_spacing[0], v.y() * vol_spacing[1]);
+    const f32 n = hypot(v.x() * vol_spacing[0], v.y() * vol_spacing[1]);
     sinogram(idx_u, proj_idx) = accumulator * n;
 }
 } // namespace kernel
@@ -79,7 +79,7 @@ void forward_2d_async(device_span_2d<T> volume, device_span_2d<U> sinogram, forw
     auto nangles = plan.nangles();
 
     auto &tex = plan.forward_tex();
-    tex.write(volume.device_data());
+    tex.write_2d(volume.device_data(), tex.config().width, tex.config().height);
 
     const int num_kernel_calls =
         utils::round_up_division(nangles, plan.num_projections_per_kernel());

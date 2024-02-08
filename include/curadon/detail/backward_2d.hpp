@@ -110,7 +110,7 @@ void backproject_2d_async(device_span_2d<T> volume, device_span_2d<U> sino, forw
         const auto offset = proj_idx * det_count;
         auto cur_proj_ptr = sino_ptr + offset;
 
-        tex.write(cur_proj_ptr, num_projections);
+        tex.write_1dlayered(cur_proj_ptr, det_count, num_projections);
 
         int divx = 16;
         int divy = 16;

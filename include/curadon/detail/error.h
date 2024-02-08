@@ -4,7 +4,7 @@
 #include <cuda_runtime_api.h>
 
 #define gpuErrchk(answer)                                                                          \
-    { ::curad::cuda::detail::gpuAssert((answer), __FILE__, __LINE__); }
+    do { ::curad::cuda::detail::gpuAssert((answer), __FILE__, __LINE__); } while(false);
 
 namespace curad::cuda::detail {
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true) {

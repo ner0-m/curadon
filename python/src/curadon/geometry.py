@@ -57,6 +57,8 @@ class FanGeometry:
                  vol_offset: Optional[Tuple[float, float]] = None,
                  COR: Optional[float] = None,
                  device: int = torch.cuda.current_device(),
+                 vol_dtype=torch.float32,
+                 sino_dtype=torch.float32
                  ):
 
         if is_convertible_to_float(DSD) is False:
@@ -138,8 +140,11 @@ class FanGeometry:
         else:
             self.vol_offset = np.zeros(self.vol_shape.shape)
 
-        self.plan = _C.forward_plan_2d(device, self.vol_shape, self.vol_spacing, self.vol_offset,
-                                       self.det_shape, self.det_spacing, self.det_offset, self.DSO, self.DSD,
+        vol_prec = torch.finfo(vol_dtype).bits
+        sino_prec = torch.finfo(sino_dtype).bits
+
+        self.plan = _C.forward_plan_2d(device, vol_prec, self.vol_shape, self.vol_spacing, self.vol_offset,
+                                       sino_prec, self.det_shape, self.det_spacing, self.det_offset, self.DSO, self.DSD,
                                        self.angles, self.det_rotation, self.COR)
 
     def sinogram_shape(self):

@@ -2,14 +2,23 @@
 
 #include "curadon/detail/device_span.hpp"
 #include "curadon/detail/error.h"
+#include "curadon/detail/utils.hpp"
+#include "curadon/types.hpp"
+#include "curadon/types_half.hpp"
 
 #include <cuda.h>
 #include <cuda_runtime.h>
 
 #include <cstring>
 #include <cuda_runtime.h>
+#include <cuda_runtime_api.h>
 
 namespace curad {
+enum class precision {
+    HALF = 16,
+    SINGLE = 32,
+};
+
 struct texture_config {
     texture_config() = default;
     texture_config(const texture_config &other) = default;
@@ -23,13 +32,26 @@ struct texture_config {
 
     bool is_layered;
 
-    // TODO: Need members for device, precision and channels
+    precision precision_;
 
     bool operator==(const texture_config &other) const {
         return device_id == other.device_id && depth == other.depth && height == other.height &&
-               width == other.width && is_layered == other.is_layered;
+               width == other.width && is_layered == other.is_layered &&
+               precision_ == other.precision_;
     }
 };
+
+namespace detail {
+__inline__ cudaChannelFormatDesc get_channel_desc(precision p) {
+    if (p == precision::SINGLE) {
+        return cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
+    } else if (p == precision::HALF) {
+        return cudaCreateChannelDesc(16, 0, 0, 0, cudaChannelFormatKindFloat);
+    }
+    // TODO error
+    throw "Unknown precision";
+}
+} // namespace detail
 
 struct texture {
   public:
@@ -37,8 +59,8 @@ struct texture {
 
     explicit texture(const texture_config &config)
         : config_(config) {
-        cudaChannelFormatDesc channelDesc;
-        channelDesc = cudaCreateChannelDesc<f32>();
+
+        auto channelDesc = detail::get_channel_desc(config_.precision_);
 
         auto allocation_type = config_.is_layered ? cudaArrayLayered : cudaArrayDefault;
 
@@ -60,40 +82,57 @@ struct texture {
         texDesc.addressMode[2] = cudaAddressModeBorder;
         texDesc.filterMode = cudaFilterModeLinear;
         texDesc.readMode = cudaReadModeElementType;
+
         texDesc.normalizedCoords = 0;
 
         // Create texture object
         gpuErrchk(cudaCreateTextureObject(&texture_, &resDesc, &texDesc, NULL));
 
+        // Create surface object associated with the same cudaArray
         gpuErrchk(cudaCreateSurfaceObject(&surface_, &resDesc));
     }
 
-    // texture(const texture &) = delete;
-    // texture &operator=(const texture &) = delete;
+    texture(const texture &) = delete;
+    texture &operator=(const texture &) = delete;
 
-    // TODO: improve this, this should take an nd_span kind of thing
-    void write(f32 *data) { this->write(data, config_.depth); }
+    template <class T>
+    void write_1dlayered(T *data, u64 width, u64 nlayers) {
+        write(data, width, 1, nlayers);
+    }
 
-    void write(f32 *data, u64 depth) {
+    template <class T>
+    void write(T *data, u64 width, u64 height, u64 depth) {
+        if (config_.precision_ != precision::SINGLE) {
+            // Something wrong, what do I do?
+        }
+
         // if using a single channel use cudaMemcpy to copy data into array
         cudaMemcpy3DParms cpy_params = {0};
 
         cpy_params.srcPos = make_cudaPos(0, 0, 0);
         cpy_params.dstPos = make_cudaPos(0, 0, 0);
 
-        const auto width = config_.width;
-        const auto size = width * sizeof(float);
+        const auto size = width * sizeof(T);
 
-        cpy_params.srcPtr =
-            make_cudaPitchedPtr(data, size, width, std::max<u64>(config_.height, 1));
+        cpy_params.srcPtr = make_cudaPitchedPtr(data, size, width, std::max<u64>(height, 1));
         cpy_params.dstArray = this->storage_;
 
         cpy_params.extent =
-            make_cudaExtent(width, std::max<u64>(config_.height, 1), std::max<u64>(depth, 1));
+            make_cudaExtent(width, std::max<u64>(height, 1), std::max<u64>(depth, 1));
 
         // cpy_params.kind = cudaMemcpyDefault;
         cpy_params.kind = cudaMemcpyDeviceToDevice;
         gpuErrchk(cudaMemcpy3D(&cpy_params));
+    }
+
+    template <class T>
+    void write_2d(T *data, u64 width, u64 height) {
+        auto pitch = width * sizeof(T);
+        auto width_bytes = width * sizeof(T);
+
+        // TODO: this isn't working for all cases yet, but for
+        gpuErrchk(cudaMemcpy2DToArray(storage_, 0, 0, data, pitch, width_bytes, height,
+                                      cudaMemcpyDefault));
     }
 
     ~texture() {

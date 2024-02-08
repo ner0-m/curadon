@@ -61,16 +61,18 @@ class forward_plan_2d {
     forward_plan_2d(forward_plan_2d &&) = default;
     forward_plan_2d &operator=(forward_plan_2d &&) = default;
 
-    forward_plan_2d(usize device, vec2u vol_shape, vec2f vol_spacing, vec2f vol_offset,
-                    u64 det_count, f32 det_spacing, f32 det_offset, f32 DSO, f32 DSD,
-                    thrust::device_vector<f32> angles)
-        : forward_plan_2d(device, vol_shape, vol_spacing, vol_offset, det_count, det_spacing,
-                          det_offset, DSO, DSD, std::move(angles), 0, 0) {}
+    forward_plan_2d(usize device, precision vol_prec, vec2u vol_shape, vec2f vol_spacing,
+                    vec2f vol_offset, precision det_prec, u64 det_count, f32 det_spacing,
+                    f32 det_offset, f32 DSO, f32 DSD, thrust::device_vector<f32> angles)
+        : forward_plan_2d(device, vol_prec, vol_shape, vol_spacing, vol_offset, det_prec, det_count,
+                          det_spacing, det_offset, DSO, DSD, std::move(angles), 0, 0) {}
 
-    forward_plan_2d(usize device, vec2u vol_shape, vec2f vol_spacing, vec2f vol_offset,
-                    u64 det_count, f32 spacing, f32 offset, f32 DSO, f32 DSD,
-                    thrust::device_vector<f32> angles, f32 pitch, f32 COR)
+    forward_plan_2d(usize device, precision vol_prec, vec2u vol_shape, vec2f vol_spacing,
+                    vec2f vol_offset, precision det_prec, u64 det_count, f32 spacing, f32 offset,
+                    f32 DSO, f32 DSD, thrust::device_vector<f32> angles, f32 pitch, f32 COR)
         : device_(device)
+        , vol_prec_(vol_prec)
+        , det_prec_(det_prec)
         , vol_shape_(vol_shape)
         , vol_spacing_(vol_spacing)
         , vol_extent_(vol_shape_ * vol_spacing_)
@@ -84,8 +86,8 @@ class forward_plan_2d {
         , angles_(std::move(angles))
         , pitch_(pitch)
         , COR_(COR)
-        , forward_tex_({device, vol_shape_[0], vol_shape_[1], 0, false})
-        , backward_tex_({device, det_count, 0, num_projections_per_kernel(), true}) {
+        , forward_tex_({device, vol_shape_[0], vol_shape_[1], 0, false, vol_prec})
+        , backward_tex_({device, det_count, 0, num_projections_per_kernel(), true, det_prec}) {
         precompute();
     }
 
@@ -99,6 +101,8 @@ class forward_plan_2d {
 
     u64 nangles() const { return angles_.size(); }
 
+    u32 vol_precision() const { return static_cast<u32>(vol_prec_); }
+
     vec2u vol_shape() const { return vol_shape_; }
 
     vec2f vol_spacing() const { return vol_spacing_; }
@@ -106,6 +110,8 @@ class forward_plan_2d {
     vec2f vol_extent() const { return vol_extent_; }
 
     vec2f vol_offset() const { return vol_offset_; }
+
+    u32 det_precision() const { return static_cast<u32>(det_prec_); }
 
     u64 det_count() const { return det_count_; }
 
@@ -201,6 +207,10 @@ class forward_plan_2d {
     }
 
     usize device_;
+
+    precision vol_prec_;
+
+    precision det_prec_;
 
     vec2u vol_shape_;
 

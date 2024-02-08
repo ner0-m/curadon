@@ -8,6 +8,7 @@
 #include "curadon/image.hpp"
 #include "curadon/measurement.hpp"
 #include "curadon/types.hpp"
+#include "curadon/types_half.hpp"
 
 #include <vector>
 
@@ -104,8 +105,30 @@ void forward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, 
     }
 
     if (vol.dtype() == nb::dtype<curad::f32>()) {
+        if (plan.vol_precision() != 32) {
+            throw nb::attribute_error("Plan precision does not match volume precision (f32)");
+        }
+
         if (sino.dtype() == nb::dtype<curad::f32>()) {
             forward_2d_cuda_typed<curad::f32, curad::f32>(vol, sino, plan);
+            return;
+        }
+        if (sino.dtype() == nb::dtype<curad::f16>()) {
+            forward_2d_cuda_typed<curad::f32, curad::f16>(vol, sino, plan);
+            return;
+        }
+    } else if (vol.dtype() == nb::dtype<curad::f16>()) {
+        if (plan.vol_precision() != 16) {
+            throw nb::attribute_error("Plan precision does not match volume precision (f16)");
+        }
+
+        if (sino.dtype() == nb::dtype<curad::f32>()) {
+            forward_2d_cuda_typed<curad::f16, curad::f32>(vol, sino, plan);
+            return;
+        }
+        if (sino.dtype() == nb::dtype<curad::f16>()) {
+            forward_2d_cuda_typed<curad::f16, curad::f16>(vol, sino, plan);
+            return;
         }
     } else {
         throw nb::type_error("Only float32 is supported");
