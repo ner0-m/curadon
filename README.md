@@ -14,6 +14,34 @@ attenuation CT. It can handle arbitrary fan and cone-beam flat-planen setups.
 It further provides differentiable PyTorch functions, helpful for deep learning
 based applications.
 
+## Performance
+
+As of now, the 2D forward and backward projection operators perform on a
+similar levels as the implementations by TorchRadon, lacking behind a bit
+for smaller problems, but outperforming (slightly) for larger problems.
+
+You can see the average operations per second over 50 runs (with 3 warmup runs)
+in the following table:
+
+| Benchmark (mean op / s) | curadon      | astra (± vs curadon)          | torch-radon (± vs curadon)    |
+|-------------------------|--------------|-------------------------------|-------------------------------|
+|         forward 2d   64 |     12864.38 |      1162.71( -91.0%, +11.1x) |     14274.11( +11.0%,  -0.9x) |
+|         forward 2d  128 |      7541.54 |      1029.40( -86.4%,  +7.3x) |      8579.41( +13.8%,  -0.9x) |
+|         forward 2d  256 |      2922.37 |       722.96( -75.3%,  +4.0x) |      3429.46( +17.4%,  -0.9x) |
+|         forward 2d  512 |       869.38 |       363.63( -58.2%,  +2.4x) |      1037.06( +19.3%,  -0.8x) |
+|         forward 2d 1024 |       241.41 |       121.98( -49.5%,  +2.0x) |       240.24(  -0.5%,  +1.0x) |
+|         forward 2d 2048 |        66.89 |        32.89( -50.8%,  +2.0x) |        47.05( -29.7%,  +1.4x) |
+|        backward 2d   64 |     12969.40 |       911.69( -93.0%, +14.2x) |     15643.38( +20.6%,  -0.8x) |
+|        backward 2d  128 |      8666.99 |       682.84( -92.1%, +12.7x) |      9538.58( +10.1%,  -0.9x) |
+|        backward 2d  256 |      3683.74 |       274.31( -92.6%, +13.4x) |      3640.26(  -1.2%,  +1.0x) |
+|        backward 2d  512 |      1083.92 |        81.28( -92.5%, +13.3x) |      1075.92(  -0.7%,  +1.0x) |
+|        backward 2d 1024 |       263.92 |        21.79( -91.7%, +12.1x) |       266.48(  +1.0%,  -1.0x) |
+|        backward 2d 2048 |        66.68 |         5.50( -91.8%, +12.1x) |        62.46(  -6.3%,  +1.1x) |
+
+The size of the image is given in the description, the detector is of size
+$\sqrt{2}n$, where $n$ is the size of the image. You can find the code to run the
+benchmarks in the `benchmark` folder.
+
 ## How to use the library
 
 Check the example folder to see how the library works. There you will find
@@ -44,7 +72,7 @@ pip install -v ./python[dev]
 ```
 
 Then you can build with editable mode:
- 
+
 ```bash
 pip install --no-build-isolation -Ceditable.rebuild=true -ve ./python
 ```
