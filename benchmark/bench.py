@@ -2,11 +2,13 @@ from types import FunctionType
 from pathlib import Path
 import pathlib
 import argparse
+import math
 import time
 import sys
 import csv
 import numpy as np
 from math import floor, log10, inf
+import torch
 
 from rich.console import Console
 from rich.table import Table
@@ -15,11 +17,7 @@ from rich.box import Box, HEAVY_HEAD, MARKDOWN
 from rich.live import Live
 
 
-def num_zeros(decimal):
-    return inf if decimal == 0 else -floor(log10(abs(decimal))) - 1
-
-
-def format_change_percentage(change, flip=False):
+def format_change_percentage(change, speedup=None, flip=False):
     if flip:
         change *= -1
     if change < 0:
@@ -35,24 +33,39 @@ def format_change_percentage(change, flip=False):
             col = "green3"
         if flip:
             change *= -1
-        return Text(f"{change:>+6.1f}%", style=col)
+
+        if speedup:
+            return Text(f"{change:>+6.1f}%, {speedup:>+5.1f}x", style=col)
+        else:
+            return Text(f"{change:>+6.1f}%", style=col)
 
     # undo flip, but suuuper ugly
     if flip:
         change *= -1
-    return Text(f"{change:>+6.1f}%", style="red")
+    if speedup:
+        return Text(f"{change:>+6.1f}%, {speedup:>+5.1f}x", style="red")
+    else:
+        return Text(f"{change:>+6.1f}%", style="red")
 
 
-def benchmark_function(func: FunctionType, repeat: int = 50, warmup: int = 3, **kwargs):
+def benchmark_function(func: FunctionType, repeat: int = 50, warmup: int = 3, framework=None, **kwargs):
     for _ in range(warmup):
         func(**kwargs)
 
     times = []
-    for i in range(repeat):
+    for _ in range(repeat):
         start_time = time.time()
-        func(**kwargs)
+
+        res = func(**kwargs)
+        torch.cuda.synchronize()
+
         end_time = time.time()
         times.append(end_time - start_time)
+
+    # if framework == "curadon":
+    #     import matplotlib.pyplot as plt
+    #     plt.imshow(res.cpu().numpy(), cmap="gray")
+    #     plt.show()
 
     return {
         "mean": np.mean(times),
@@ -63,10 +76,12 @@ def benchmark_function(func: FunctionType, repeat: int = 50, warmup: int = 3, **
 
 
 def count_frameworks(d: dict):
-    desc = list(d.keys())[0]
-    n = list(d[desc].keys())[0]
-    frameworks = d[desc][n].keys()
-    return len(frameworks), list(frameworks)
+    for desc in d.keys():
+        if not d[desc]:
+            continue
+        n = list(d[desc].keys())[0]
+        frameworks = d[desc][n].keys()
+        return len(frameworks), list(frameworks)
 
 
 def header_str(framework, baseline=None):
@@ -88,11 +103,15 @@ def print_table(results, title, markdown=True, baseline=None):
                      style="cyan", no_wrap=True)
 
     n_frameworks, frameworks = count_frameworks(results)
-    print(frameworks)
 
-    table.add_column(header_str("curadon", baseline))
-    table.add_column(header_str("astra", baseline))
-    table.add_column(header_str("torch-radon", baseline))
+    if "curadon" in frameworks:
+        table.add_column(header_str("curadon", baseline))
+    if "astra" in frameworks:
+        table.add_column(header_str("astra"))
+    if "torch-radon" in frameworks:
+        table.add_column(header_str("torch-radon"))
+    if "tigre" in frameworks:
+        table.add_column(header_str("tigre"))
 
     for desc, v in results.items():
         for n, benchmarks in v.items():
@@ -103,14 +122,15 @@ def print_table(results, title, markdown=True, baseline=None):
             if "curadon" in benchmarks:
                 tmp = benchmarks["curadon"]
                 curadon_mean = tmp["mean"]
-                # row.append(
-                #     f"{tmp['mean']:>12.2f} {tmp['min']:>12.2f} {tmp['max']:>12.2f}")
                 change = None
+
                 if baseline and row[0] in baseline:
-                    baseline_mean = baseline[row[0]]["benchmark"]["mean"]
-                    print(baseline_mean, curadon_mean)
+                    base_mean = baseline[row[0]]["benchmark"]["mean"]
+                    change_perc = (curadon_mean - base_mean) / base_mean * 100
+                    change_speedup = math.copysign(
+                        curadon_mean / base_mean, change_perc)
                     change = format_change_percentage(
-                        (curadon_mean - baseline_mean) / baseline_mean * 100, flip=True)
+                        change_perc, speedup=change_speedup, flip=True)
                 elif baseline:
                     change = "---".center(7)
 
@@ -126,17 +146,29 @@ def print_table(results, title, markdown=True, baseline=None):
                 tmp = benchmarks[framework]
                 mean = tmp["mean"]
 
-                change = format_change_percentage(
-                    (mean - curadon_mean) / curadon_mean * 100)
+                change = None
+                if curadon_mean:
+                    change_perc = (mean - curadon_mean) / curadon_mean * 100
+                    change_speedup = - \
+                        math.copysign(curadon_mean / mean, change_perc)
+                    change = format_change_percentage(
+                        change_perc, speedup=change_speedup)
 
                 row_content = Text()
-                row_content.append(f"{mean:>12.2f} (")
-                row_content.append(change)
-                row_content.append(")")
+                row_content.append(f"{mean:>12.2f}")
+                if change:
+                    row_content.append("(")
+                    row_content.append(change)
+                    row_content.append(")")
                 row.append(row_content)
 
-            format_other_framework("astra", benchmarks["astra"])
-            format_other_framework("torch-radon", benchmarks["torch-radon"])
+            if "astra" in benchmarks:
+                format_other_framework("astra", benchmarks["astra"])
+            if "torch-radon" in benchmarks:
+                format_other_framework(
+                    "torch-radon", benchmarks["torch-radon"])
+            if "tigre" in benchmarks:
+                format_other_framework("tigre", benchmarks["tigre"])
 
             table.add_row(*row)
 
@@ -164,10 +196,11 @@ def write_csv_curadon(output, results):
             for desc, v in results.items():
                 for n, benchmarks in v.items():
                     for framework, run in benchmarks.items():
-                        # run = benchmarks["curadon"]
+                        if framework != "curadon":
+                            continue
                         row = {
                             "framework": framework,
-                            "description": f"{desc} {n: > 4}",
+                            "description": f"{desc} {n:>4}",
                             "mean": run["mean"],
                             "min": run["min"],
                             "max": run["max"],
@@ -187,15 +220,21 @@ def read_csv_baseline(path):
     with path.open("r", encoding="utf-8") as b:
         reader = csv.DictReader(b, delimiter=';')
         for line in reader:
+            if line['framework'] != "curadon":
+                continue
             # framework;description;mean;min;max;stddev;vol_shape;vol_spacing;vol_offset;det_shape;det_spacing;det_offset;det_rotation;arc;nangles;DSO;DSD;COR
             baseline[line['description']] = {
                 "framework": line['framework'],
                 "benchmark": {
                     # TODO: Currently this is still stored in seconds...
-                    "mean": 1. / float(line['mean']),
-                    "min": 1. / float(line['min']),
-                    "max": 1. / float(line['max']),
-                    "stddev": 1. / float(line['stddev']),
+                    # "mean": 1. / float(line['mean']),
+                    # "min": 1. / float(line['min']),
+                    # "max": 1. / float(line['max']),
+                    # "stddev": 1. / float(line['stddev']),
+                    "mean": float(line['mean']),
+                    "min": float(line['min']),
+                    "max": float(line['max']),
+                    "stddev": float(line['stddev']),
                 },
                 "config": {
                     "vol_shape": line['vol_shape'],
@@ -214,8 +253,8 @@ def read_csv_baseline(path):
     return baseline
 
 
-def main(target, repeat=50, warmup=3, output="benchmarks.csv", baseline_path=None, filter_benchmark=None, filter_benchmark_desc=None, markdown=True,
-         rmin=7, rmax=10
+def main(target, repeat=50, warmup=3, output=None, baseline_path=None, filter_benchmark=None, filter_benchmark_desc=None, markdown=True,
+         rmin=7, rmax=10, launch_config=None
          ):
 
     bench_dir = pathlib.Path(target)
@@ -245,8 +284,11 @@ def main(target, repeat=50, warmup=3, output="benchmarks.csv", baseline_path=Non
                     n = 2**i
 
                     run_params = params(n)
+                    if framework == "curadon" and launch_config:
+                        run_params["launch_config"] = launch_config
+
                     result = benchmark_function(
-                        fn, repeat=repeat, warmup=warmup, **run_params)
+                        fn, repeat=repeat, warmup=warmup, framework=framework, **run_params)
                     del run_params
 
                     res_min = 1. / result["min"]
@@ -268,7 +310,8 @@ def main(target, repeat=50, warmup=3, output="benchmarks.csv", baseline_path=Non
     title = f"Benchmarks, repeat={repeat}, warumup={warmup}"
     print_table(benchmark_results, title, markdown, baseline=baseline)
 
-    write_csv_curadon(output, benchmark_results)
+    if output:
+        write_csv_curadon(output, benchmark_results)
 
 
 if __name__ == '__main__':
@@ -278,7 +321,7 @@ if __name__ == '__main__':
                         help="Number of times to repeat")
     parser.add_argument("--warmup", type=int, default=5,
                         help="Number of warmup runs")
-    parser.add_argument("--output", type=Path, default="benchmarks.csv")
+    parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--markdown", default=False, action='store_true')
     parser.add_argument("--rmin", type=int, default=7)
@@ -287,10 +330,13 @@ if __name__ == '__main__':
                         help="Filter by benchmark")
     parser.add_argument("--filter-desc", nargs='?',
                         default=None, help="Filter by benchmark description")
+    parser.add_argument("--launch_config", nargs="+",
+                        type=int, help="Launch config for curadon")
 
     args = parser.parse_args()
 
+    launch_config = tuple(args.launch_config) if args.launch_config else None
     main(args.target, repeat=args.repeat, warmup=args.warmup,
          output=args.output, baseline_path=args.baseline, filter_benchmark=args.filter, filter_benchmark_desc=args.filter_desc, markdown=args.markdown,
-         rmin=args.rmin, rmax=args.rmax
+         rmin=args.rmin, rmax=args.rmax, launch_config=launch_config
          )

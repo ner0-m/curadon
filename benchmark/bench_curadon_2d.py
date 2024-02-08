@@ -18,14 +18,16 @@ def config(n):
         "DSO": n*20.,
         "DSD": n*20. + n * 2.,
         "COR": 0,
+        "dtype": torch.float16,
     }
 
 
 def setup_curadon_forward_2d(n):
     cfg = config(n)
+    dtype = cfg["dtype"]
 
     phantom = np.flip(shepp_logan(cfg["vol_shape"])).copy()
-    volume = torch.from_numpy(phantom).type(torch.float32).cuda()
+    volume = torch.from_numpy(phantom).type(dtype).cuda()
 
     det_shape = cfg["det_shape"]
     angles = np.linspace(0, cfg["arc"], cfg["nangles"], endpoint=False)
@@ -33,8 +35,11 @@ def setup_curadon_forward_2d(n):
     DSD = cfg["DSD"]
 
     geom = curadon.FanGeometry(
-        DSD, DSO, angles, cfg["vol_shape"], det_shape)
-    sino = torch.zeros(cfg["nangles"], det_shape).type(torch.float32).cuda()
+        DSD, DSO, angles, cfg["vol_shape"], det_shape,
+        vol_dtype=dtype,
+        sino_dtype=dtype,
+    )
+    sino = torch.zeros(cfg["nangles"], det_shape).type(dtype).cuda()
 
     return {
         "volume": volume, "geom": geom, "sinogram": sino
@@ -43,29 +48,42 @@ def setup_curadon_forward_2d(n):
 
 def setup_curadon_backward_2d(n):
     cfg = config(n)
+    dtype = cfg["dtype"]
 
     angles = np.linspace(0, cfg["arc"], cfg["nangles"], endpoint=False)
     DSO = cfg["DSO"]
     DSD = cfg["DSD"]
 
     geom = curadon.FanGeometry(
-        DSD, DSO, angles, cfg["vol_shape"], cfg["det_shape"])
+        DSD, DSO, angles, cfg["vol_shape"], cfg["det_shape"],
+        vol_dtype=dtype,
+        sino_dtype=dtype,
+    )
 
     phantom = np.flip(shepp_logan(cfg["vol_shape"])).copy()
-    vol = torch.from_numpy(phantom).type(torch.float32).cuda()
-    sino = curadon.forward(vol, geom)
+    vol = torch.from_numpy(phantom).type(dtype).cuda()
+    sino = torch.zeros(cfg["nangles"], cfg["det_shape"]).type(dtype).cuda()
+    curadon.forward(vol, geom, sino)
 
     return {
         "volume": vol, "geom": geom, "sinogram": sino
     }
 
 
-def kernel_curadon_forward_2d(volume, geom, sinogram):
+def kernel_curadon_forward_2d(volume, geom, sinogram, launch_config=None):
+    if launch_config:
+        geom.plan.forward_block_x = launch_config[0]
+        geom.plan.forward_block_y = launch_config[1]
+
     curadon.forward(volume, geom, sinogram=sinogram)
     return sinogram
 
 
-def kernel_curadon_backward_2d(sinogram, geom, volume):
+def kernel_curadon_backward_2d(sinogram, geom, volume, launch_config=None):
+    if launch_config:
+        geom.plan.forward_block_x = launch_config[0]
+        geom.plan.forward_block_y = launch_config[1]
+
     curadon.backward(sinogram, geom, volume=volume)
     return volume
 
