@@ -110,7 +110,9 @@ void backproject_2d_async(device_span_2d<T> volume, device_span_2d<U> sino, forw
         const auto offset = proj_idx * det_count;
         auto cur_proj_ptr = sino_ptr + offset;
 
-        tex.write_1dlayered(cur_proj_ptr, det_count, num_projections);
+        auto loop_stream = cuda::get_next_stream();
+
+        tex.write_1dlayered(cur_proj_ptr, det_count, num_projections, loop_stream);
 
         int divx = 16;
         int divy = 16;
@@ -118,8 +120,6 @@ void backproject_2d_async(device_span_2d<T> volume, device_span_2d<U> sino, forw
 
         int block_x = utils::round_up_division(vol_shape[0], divx);
         int block_y = utils::round_up_division(vol_shape[1], divy);
-
-        auto loop_stream = cuda::get_next_stream();
 
         dim3 num_blocks(block_x, block_y);
         kernel::backward_2d<<<num_blocks, threads_per_block,

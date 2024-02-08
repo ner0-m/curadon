@@ -3,6 +3,7 @@
 #include "curadon/detail/device_span.hpp"
 #include "curadon/detail/error.h"
 #include "curadon/detail/utils.hpp"
+#include "curadon/pool.hpp"
 #include "curadon/types.hpp"
 #include "curadon/types_half.hpp"
 
@@ -96,12 +97,12 @@ struct texture {
     texture &operator=(const texture &) = delete;
 
     template <class T>
-    void write_1dlayered(T *data, u64 width, u64 nlayers) {
-        write(data, width, 1, nlayers);
+    void write_1dlayered(T *data, u64 width, u64 nlayers, cuda::stream_view stream) {
+        write(data, width, 1, nlayers, stream);
     }
 
     template <class T>
-    void write(T *data, u64 width, u64 height, u64 depth) {
+    void write(T *data, u64 width, u64 height, u64 depth, cuda::stream_view stream) {
         if (config_.precision_ != precision::SINGLE) {
             // Something wrong, what do I do?
         }
@@ -122,17 +123,17 @@ struct texture {
 
         // cpy_params.kind = cudaMemcpyDefault;
         cpy_params.kind = cudaMemcpyDeviceToDevice;
-        gpuErrchk(cudaMemcpy3D(&cpy_params));
+        gpuErrchk(cudaMemcpy3DAsync(&cpy_params, stream));
     }
 
     template <class T>
-    void write_2d(T *data, u64 width, u64 height) {
+    void write_2d(T *data, u64 width, u64 height, cuda::stream_view stream) {
         auto pitch = width * sizeof(T);
         auto width_bytes = width * sizeof(T);
 
         // TODO: this isn't working for all cases yet, but for
-        gpuErrchk(cudaMemcpy2DToArray(storage_, 0, 0, data, pitch, width_bytes, height,
-                                      cudaMemcpyDefault));
+        gpuErrchk(cudaMemcpy2DToArrayAsync(storage_, 0, 0, data, pitch, width_bytes, height,
+                                           cudaMemcpyDefault, stream));
     }
 
     ~texture() {

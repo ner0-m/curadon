@@ -79,7 +79,11 @@ void forward_2d_async(device_span_2d<T> volume, device_span_2d<U> sinogram, forw
     auto nangles = plan.nangles();
 
     auto &tex = plan.forward_tex();
-    tex.write_2d(volume.device_data(), tex.config().width, tex.config().height);
+    tex.write_2d(volume.device_data(), tex.config().width, tex.config().height, stream);
+
+    // Create event to observe texture write
+    auto tex_event = cuda::get_next_event();
+    tex_event.record(stream);
 
     const int num_kernel_calls =
         utils::round_up_division(nangles, plan.num_projections_per_kernel());
@@ -97,6 +101,9 @@ void forward_2d_async(device_span_2d<T> volume, device_span_2d<U> sinogram, forw
                   utils::round_up_division(num_projections, block.y));
 
         auto loop_stream = cuda::get_next_stream();
+
+        // Ensure that texture copy already happend
+        loop_stream.wait_for_event(tex_event);
 
         auto sino_slice = sinogram.slice(proj_idx, num_projections);
         kernel::kernel_forward_2d<<<grid, block, 0, loop_stream>>>(
