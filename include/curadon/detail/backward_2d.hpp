@@ -24,11 +24,8 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
                             f32 det_spacing, f32 DSD, f32 DSO, f32 *__restrict__ angles,
                             u64 cur_projection, u64 nangles, u64 num_projections) {
     // Calculate image coordinates
-    const u64 x = blockIdx.x * blockDim.x + threadIdx.x;
-
-    const u64 y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    const u64 tid = threadIdx.y * blockDim.x + threadIdx.x;
+    const u64 idx_x = blockIdx.x * blockDim.x + threadIdx.x;
+    const u64 idx_y = blockIdx.y * blockDim.y + threadIdx.y;
 
     const f32 vol_extend_x = vol_shape[0] / 2.0f;
     const f32 vol_extend_y = vol_shape[1] / 2.0f;
@@ -36,13 +33,14 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
 
     const f32 inv_u_spacing = __fdividef(1.0f, det_spacing);
 
-    if (x >= vol_shape[0] || y >= vol_shape[1]) {
+    if (idx_x >= vol_shape[0] || idx_y >= vol_shape[1]) {
         return;
     }
 
     // keep sin and cos packed together to save one memory load in the main loop
     extern __shared__ float2 sincos[];
 
+    const u64 tid = threadIdx.y * blockDim.x + threadIdx.x;
     for (int i = tid; i < nangles; i += blockDim.x * blockDim.y) {
         if (i < num_projections) {
             float2 tmp;
@@ -54,11 +52,11 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
     __syncthreads();
 
     // Compute x and y coordinates in world space (without rotation)
-    const f32 real_x = (f32(x) - vol_extend_x) * vol_spacing[0] + vol_offset[0] + 0.5f;
-    const f32 real_y = (f32(y) - vol_extend_y) * vol_spacing[1] + vol_offset[1] + 0.5f;
+    const f32 x = (f32(idx_x) - vol_extend_x) * vol_spacing[0] + vol_offset[0] + 0.5f;
+    const f32 y = (f32(idx_y) - vol_extend_y) * vol_spacing[1] + vol_offset[1] + 0.5f;
 
-    const f32 scaled_real_x = real_x * inv_u_spacing;
-    const f32 scaled_real_y = real_y * inv_u_spacing;
+    const f32 sx = x * inv_u_spacing;
+    const f32 sy = y * inv_u_spacing;
 
     f32 accum = 0.0f;
 
@@ -71,16 +69,29 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
         const auto sin = sincos[proj_idx].x;
         const auto cos = sincos[proj_idx].y;
 
-        // Similar to equation (2) from "CUDA and OpenCL Implementations of 3D CT Reconstruction for
-        // Biomedical Imaging", but adapted to produce equal output to TorchRadon and ASTRA
-        const f32 denominator = fmaf(cos, -real_y, sin * real_x + DSO);
-        const f32 dist_denom = __fdividef(DSD, denominator);
+        // Naming conventions follows
+        // "A geometric calibration method for cone beam CT systems" by Kai Yang (2006)
+        // Basically implementing the first line of equation 1:
+        //    ui = (DSD / (DSO + xi)) * (yi / delta u) + u_0
+        // where xi, and yi are the rotated points respectively, delta u is the
+        // spacing of the detector, and u_0 is the detector offset
 
-        const f32 u = fmaf(cos * scaled_real_x + sin * scaled_real_y, dist_denom, det_extend_u);
-        accum += tex1DLayered<float>(texture, u, proj_idx) * dist_denom;
+        // rotate x and y points
+        const f32 xi = fmaf(cos, -y, sin * x);
+        const f32 yi = fmaf(cos, sx, sin * sy);
+
+        // Compute term 1
+        const f32 weight = __fdividef(DSD, xi + DSO);
+
+        // Putting it all together
+        const f32 u = fmaf(weight, yi, det_extend_u);
+
+        // TODO: This is not yet proper FDK weighting. This is what TrochRadon is doing
+        // and ASTRA for non FBP back projections! For FDK it should be weight * weight
+        accum += tex1DLayered<float>(texture, u, proj_idx) * weight;
     }
 
-    volume[x + vol_shape[0] * y] += accum * inv_u_spacing;
+    volume[idx_x + vol_shape[0] * idx_y] += accum * inv_u_spacing;
 }
 } // namespace kernel
 
