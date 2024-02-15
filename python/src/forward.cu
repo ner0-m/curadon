@@ -78,7 +78,7 @@ template <class T, class U>
 void forward_2d_cuda_typed(
     nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> vol,
     nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
-    curad::forward_plan_2d &plan) {
+    curad::plan_2d &plan) {
 
     curad::usize device = vol.device_id();
 
@@ -91,7 +91,7 @@ void forward_2d_cuda_typed(
 
 void forward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> vol,
                      nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
-                     curad::forward_plan_2d &plan) {
+                     curad::plan_2d &plan) {
     if (vol.device_id() != sino.device_id()) {
         throw nb::attribute_error("Volume and sinogram must be on the same device");
     }

@@ -28,11 +28,11 @@ curad::precision dtype_to_precision(curad::u32 dtype) {
 }
 
 void add_plan(nb::module_ &m) {
-    nb::class_<curad::forward_plan_2d>(m, "forward_plan_2d")
+    nb::class_<curad::plan_2d>(m, "plan_2d")
         // Ugly, but that's how it works see
         // https://nanobind.readthedocs.io/en/latest/porting.html#custom-constructors
         .def("__init__",
-             [](curad::forward_plan_2d *plan, curad::usize device, curad::u32 vol_prec,
+             [](curad::plan_2d *plan, curad::usize device, curad::u32 vol_prec,
                 nb::ndarray<curad::u64, nb::shape<2>, nb::device::cpu> py_vol_shape,
                 nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> py_vol_spacing,
                 nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> py_vol_offset,
@@ -46,11 +46,11 @@ void add_plan(nb::module_ &m) {
                  curad::vec2f vol_spacing{py_vol_spacing(1), py_vol_spacing(0)};
                  curad::vec2f vol_offset{py_vol_offset(1), py_vol_offset(0)};
 
-                 new (plan) curad::forward_plan_2d(
+                 new (plan) curad::plan_2d(
                      device, dtype_to_precision(vol_prec), vol_shape, vol_spacing, vol_offset,
                      dtype_to_precision(det_prec), det_count, det_spacing, det_offset, DSO, DSD,
                      owning_angles, det_pitch, COR);
              })
-        .def_rw("forward_block_x", &curad::forward_plan_2d::forward_block_x)
-        .def_rw("forward_block_y", &curad::forward_plan_2d::forward_block_y);
+        .def_rw("forward_block_x", &curad::plan_2d::forward_block_x)
+        .def_rw("forward_block_y", &curad::plan_2d::forward_block_y);
 }

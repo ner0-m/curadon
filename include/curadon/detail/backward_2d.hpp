@@ -96,7 +96,7 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
 } // namespace kernel
 
 template <class T, class U>
-void backproject_2d_async(device_span_2d<T> volume, device_span_2d<U> sino, forward_plan_2d &plan,
+void backproject_2d_async(device_span_2d<T> volume, device_span_2d<U> sino, plan_2d &plan,
                           cuda::stream_view stream) {
     auto vol_shape = plan.vol_shape();
 
@@ -149,13 +149,13 @@ void backproject_2d_async(device_span_2d<T> volume, device_span_2d<U> sino, forw
 
 template <class T, class U>
 void backproject_2d_sync(device_span_2d<T> volume, device_span_2d<U> sinogram,
-                         forward_plan_2d &plan, cuda::stream_view stream) {
+                         plan_2d &plan, cuda::stream_view stream) {
     backproject_2d_async(volume, sinogram, plan, stream);
     stream.synchronize();
 }
 
 template <class T, class U>
-void backproject_2d(device_span_2d<T> volume, device_span_2d<U> sinogram, forward_plan_2d &plan) {
+void backproject_2d(device_span_2d<T> volume, device_span_2d<U> sinogram, plan_2d &plan) {
     auto stream = cuda::get_next_stream();
     backproject_2d_sync(volume, sinogram, plan, stream);
 }

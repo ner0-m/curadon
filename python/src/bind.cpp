@@ -4,7 +4,7 @@
 #include "curadon/types.hpp"
 
 namespace curad {
-class forward_plan_2d;
+class plan_2d;
 }
 
 namespace nb = nanobind;
@@ -26,7 +26,7 @@ void forward_3d_cuda(
 
 void forward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> x,
                      nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> y,
-                     curad::forward_plan_2d &plan);
+                     curad::plan_2d &plan);
 
 void backward_3d_cuda(
     nb::ndarray<curad::f32, nb::shape<nb::any, nb::any, nb::any>, nb::device::cuda, nb::c_contig> x,
@@ -45,7 +45,7 @@ void backward_3d_cuda(
 
 void backward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> vol,
                       nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
-                      curad::forward_plan_2d &plan);
+                      curad::plan_2d &plan);
 
 void add_stream(nb::module_ &m);
 

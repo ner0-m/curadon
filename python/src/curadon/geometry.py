@@ -143,9 +143,9 @@ class FanGeometry:
         vol_prec = torch.finfo(vol_dtype).bits
         sino_prec = torch.finfo(sino_dtype).bits
 
-        self.plan = _C.forward_plan_2d(device, vol_prec, self.vol_shape, self.vol_spacing, self.vol_offset,
-                                       sino_prec, self.det_shape, self.det_spacing, self.det_offset, self.DSO, self.DSD,
-                                       self.angles, self.det_rotation, self.COR)
+        self.plan = _C.plan_2d(device, vol_prec, self.vol_shape, self.vol_spacing, self.vol_offset,
+                               sino_prec, self.det_shape, self.det_spacing, self.det_offset, self.DSO, self.DSD,
+                               self.angles, self.det_rotation, self.COR)
 
     def sinogram_shape(self):
         return (self.nangles, self.det_shape)

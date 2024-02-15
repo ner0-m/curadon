@@ -73,7 +73,7 @@ __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_sh
 } // namespace kernel
 
 template <class T, class U>
-void forward_2d_async(device_span_2d<T> volume, device_span_2d<U> sinogram, forward_plan_2d &plan,
+void forward_2d_async(device_span_2d<T> volume, device_span_2d<U> sinogram, plan_2d &plan,
                       cuda::stream_view stream) {
     auto det_shape = plan.det_count();
     auto nangles = plan.nangles();
@@ -119,14 +119,14 @@ void forward_2d_async(device_span_2d<T> volume, device_span_2d<U> sinogram, forw
 }
 
 template <class T, class U>
-void forward_2d_sync(device_span_2d<T> volume, device_span_2d<U> sinogram, forward_plan_2d &plan,
+void forward_2d_sync(device_span_2d<T> volume, device_span_2d<U> sinogram, plan_2d &plan,
                      cuda::stream_view stream) {
     forward_2d_async(volume, sinogram, plan, stream);
     stream.synchronize();
 }
 
 template <class T, class U>
-void forward_2d(device_span_2d<T> volume, device_span_2d<U> sinogram, forward_plan_2d &plan) {
+void forward_2d(device_span_2d<T> volume, device_span_2d<U> sinogram, plan_2d &plan) {
     auto stream = cuda::get_next_stream();
     forward_2d_sync(volume, sinogram, plan, stream);
 }

@@ -49,25 +49,25 @@ struct precompute_det_origin_fn {
 };
 } // namespace detail
 
-class forward_plan_2d {
+class plan_2d {
   public:
-    forward_plan_2d() = default;
+    plan_2d() = default;
 
     // don't allow copy, TODO: maybe make this easier, but this should be expensive and hence
     // avoided
-    forward_plan_2d(const forward_plan_2d &) = delete;
-    forward_plan_2d &operator=(const forward_plan_2d &) = delete;
+    plan_2d(const plan_2d &) = delete;
+    plan_2d &operator=(const plan_2d &) = delete;
 
-    forward_plan_2d(forward_plan_2d &&) = default;
-    forward_plan_2d &operator=(forward_plan_2d &&) = default;
+    plan_2d(plan_2d &&) = default;
+    plan_2d &operator=(plan_2d &&) = default;
 
-    forward_plan_2d(usize device, precision vol_prec, vec2u vol_shape, vec2f vol_spacing,
+    plan_2d(usize device, precision vol_prec, vec2u vol_shape, vec2f vol_spacing,
                     vec2f vol_offset, precision det_prec, u64 det_count, f32 det_spacing,
                     f32 det_offset, f32 DSO, f32 DSD, thrust::device_vector<f32> angles)
-        : forward_plan_2d(device, vol_prec, vol_shape, vol_spacing, vol_offset, det_prec, det_count,
+        : plan_2d(device, vol_prec, vol_shape, vol_spacing, vol_offset, det_prec, det_count,
                           det_spacing, det_offset, DSO, DSD, std::move(angles), 0, 0) {}
 
-    forward_plan_2d(usize device, precision vol_prec, vec2u vol_shape, vec2f vol_spacing,
+    plan_2d(usize device, precision vol_prec, vec2u vol_shape, vec2f vol_spacing,
                     vec2f vol_offset, precision det_prec, u64 det_count, f32 spacing, f32 offset,
                     f32 DSO, f32 DSD, thrust::device_vector<f32> angles, f32 pitch, f32 COR)
         : device_(device)
