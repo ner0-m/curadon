@@ -77,17 +77,17 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
         // spacing of the detector, and u_0 is the detector offset
 
         // rotate x and y points
-        const f32 xi = fmaf(cos, -y, sin * x);
-        const f32 yi = fmaf(cos, sx, sin * sy);
+        const f32 xi = sin * x - cos * y;
+        const f32 yi = cos * sx + sin * sy;
 
         // Compute term 1
         const f32 weight = __fdividef(DSD, xi + DSO);
 
         // Putting it all together
-        const f32 u = fmaf(weight, yi, det_extend_u);
+        const f32 u = weight * yi + det_extend_u;
 
         // TODO: This is not yet proper FDK weighting. This is what TrochRadon is doing
-        // and ASTRA for non FBP back projections! For FDK it should be weight * weight
+        // and ASTRA for non FBP back projections! 
         accum += tex1DLayered<float>(texture, u, proj_idx) * weight;
     }
 
@@ -117,24 +117,25 @@ void backproject_2d_async(device_span_2d<T> volume, device_span_2d<U> sino, forw
         const auto num_projections =
             std::min<int>(plan.num_projections_per_kernel(), num_projections_left);
 
+        auto loop_stream = cuda::get_next_stream();
+
         // Copy projection data necessary for the next kernel to cuda array
         const auto offset = proj_idx * det_count;
         auto cur_proj_ptr = sino_ptr + offset;
 
-        auto loop_stream = cuda::get_next_stream();
-
         tex.write_1dlayered(cur_proj_ptr, det_count, num_projections, loop_stream);
 
-        int divx = 16;
-        int divy = 16;
+        int divx = 32;
+        int divy = 8;
         dim3 threads_per_block(divx, divy);
 
         int block_x = utils::round_up_division(vol_shape[0], divx);
         int block_y = utils::round_up_division(vol_shape[1], divy);
-
         dim3 num_blocks(block_x, block_y);
-        kernel::backward_2d<<<num_blocks, threads_per_block,
-                              sizeof(f32) * plan.num_projections_per_kernel(), loop_stream>>>(
+
+        const u32 shared_mem_bytes = sizeof(f32) * plan.num_projections_per_kernel();
+
+        kernel::backward_2d<<<num_blocks, threads_per_block, shared_mem_bytes, loop_stream>>>(
             volume.device_data(), plan.vol_shape(), plan.vol_spacing(), plan.vol_offset(),
             tex.tex(), det_count, plan.det_spacing(), plan.DSD(), plan.DSO(), plan.angles().data(),
             proj_idx, nangles, plan.num_projections_per_kernel());
