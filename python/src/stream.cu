@@ -23,8 +23,8 @@ void add_stream(nb::module_ &m) {
         .def("wait_for_event", &curad::cuda::stream::wait_for_event);
 
     nb::class_<curad::cuda::stream_view>(m, "stream_view")
-        .def("synchronize", &curad::cuda::stream::synchronize)
-        .def("wait_for_event", &curad::cuda::stream::wait_for_event);
+        .def("synchronize", &curad::cuda::stream_view::synchronize)
+        .def("wait_for_event", &curad::cuda::stream_view::wait_for_event);
 
     nb::class_<curad::cuda::stream_pool>(m, "stream_pool")
         .def(nb::init<curad::usize>())

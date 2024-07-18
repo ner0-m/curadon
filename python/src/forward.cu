@@ -21,16 +21,16 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 void forward_3d_cuda(
-    nb::ndarray<curad::f32, nb::shape<nb::any, nb::any, nb::any>, nb::device::cuda, nb::c_contig>
+    nb::ndarray<curad::f32, nb::shape<-1, -1, -1>, nb::device::cuda, nb::c_contig>
         volume,
     nb::ndarray<curad::u64, nb::shape<3>, nb::device::cpu> vol_shape,
     nb::ndarray<curad::f32, nb::shape<3>, nb::device::cpu> vol_spacing,
     nb::ndarray<curad::f32, nb::shape<3>, nb::device::cpu> vol_offset,
-    nb::ndarray<curad::f32, nb::shape<nb::any, nb::any, nb::any>, nb::device::cuda, nb::c_contig>
+    nb::ndarray<curad::f32, nb::shape<-1, -1, -1>, nb::device::cuda, nb::c_contig>
         sinogram,
-    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> phi,
-    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> theta,
-    nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cpu> psi,
+    nb::ndarray<curad::f32, nb::shape<-1>, nb::device::cpu> phi,
+    nb::ndarray<curad::f32, nb::shape<-1>, nb::device::cpu> theta,
+    nb::ndarray<curad::f32, nb::shape<-1>, nb::device::cpu> psi,
     nb::ndarray<curad::u64, nb::shape<2>, nb::device::cpu> det_shape,
     nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> det_spacing,
     nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> det_offset,
@@ -76,8 +76,8 @@ void forward_3d_cuda(
 
 template <class T, class U>
 void forward_2d_cuda_typed(
-    nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> vol,
-    nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
+    nb::ndarray<nb::shape<-1, -1>, nb::device::cuda, nb::c_contig> vol,
+    nb::ndarray<nb::shape<-1, -1>, nb::device::cuda, nb::c_contig> sino,
     curad::plan_2d &plan) {
 
     curad::usize device = vol.device_id();
@@ -89,8 +89,8 @@ void forward_2d_cuda_typed(
     curad::fp::forward_2d<T, U>(vol_span, sino_span, plan);
 }
 
-void forward_2d_cuda(nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> vol,
-                     nb::ndarray<nb::shape<nb::any, nb::any>, nb::device::cuda, nb::c_contig> sino,
+void forward_2d_cuda(nb::ndarray<nb::shape<-1, -1>, nb::device::cuda, nb::c_contig> vol,
+                     nb::ndarray<nb::shape<-1, -1>, nb::device::cuda, nb::c_contig> sino,
                      curad::plan_2d &plan) {
     if (vol.device_id() != sino.device_id()) {
         throw nb::attribute_error("Volume and sinogram must be on the same device");

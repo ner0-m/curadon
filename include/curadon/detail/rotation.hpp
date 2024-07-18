@@ -47,6 +47,7 @@ __host__ __device__ vec<T, 3> rotate_roll_pitch_yaw(const vec<T, 3> &v, T roll, 
     return res;
 }
 
+/// Rotate `v` clockwise around `t` by phi radian
 __inline__ __host__ __device__ vec2f rotate(const vec2f &v, f32 phi, const vec2f &t) {
 #ifdef __CUDA_ARCH__
     const auto cs = __cosf(phi);

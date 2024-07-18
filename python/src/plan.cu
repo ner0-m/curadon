@@ -38,7 +38,7 @@ void add_plan(nb::module_ &m) {
                 nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> py_vol_offset,
                 curad::u32 det_prec, curad::u64 det_count, curad::f32 det_spacing,
                 curad::f32 det_offset, curad::f32 DSO, curad::f32 DSD,
-                nb::ndarray<curad::f32, nb::shape<nb::any>, nb::device::cuda> angles,
+                nb::ndarray<curad::f32, nb::shape<-1>, nb::device::cuda> angles,
                 curad::f32 det_pitch, curad::f32 COR) {
                  thrust::device_vector<curad::f32> owning_angles(angles.data(),
                                                                  angles.data() + angles.size());
@@ -46,10 +46,10 @@ void add_plan(nb::module_ &m) {
                  curad::vec2f vol_spacing{py_vol_spacing(1), py_vol_spacing(0)};
                  curad::vec2f vol_offset{py_vol_offset(1), py_vol_offset(0)};
 
-                 new (plan) curad::plan_2d(
-                     device, dtype_to_precision(vol_prec), vol_shape, vol_spacing, vol_offset,
-                     dtype_to_precision(det_prec), det_count, det_spacing, det_offset, DSO, DSD,
-                     owning_angles, det_pitch, COR);
+                 new (plan) curad::plan_2d(device, dtype_to_precision(vol_prec), vol_shape,
+                                           vol_spacing, vol_offset, dtype_to_precision(det_prec),
+                                           det_count, det_spacing, det_offset, DSO, DSD,
+                                           owning_angles, det_pitch, COR);
              })
         .def_rw("forward_block_x", &curad::plan_2d::forward_block_x)
         .def_rw("forward_block_y", &curad::plan_2d::forward_block_y);
