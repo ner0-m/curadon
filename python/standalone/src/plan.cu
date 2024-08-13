@@ -38,7 +38,7 @@ void add_plan(nb::module_ &m) {
                 nb::ndarray<curad::f32, nb::shape<2>, nb::device::cpu> py_vol_offset,
                 curad::u32 det_prec, curad::u64 det_count, curad::f32 det_spacing,
                 curad::f32 det_offset, curad::f32 DSO, curad::f32 DSD,
-                nb::ndarray<curad::f32, nb::shape<-1>, nb::device::cuda> angles,
+                nb::ndarray<curad::f32, nb::shape<-1>, nb::device::cpu> angles,
                 curad::f32 det_pitch, curad::f32 COR) {
                  thrust::device_vector<curad::f32> owning_angles(angles.data(),
                                                                  angles.data() + angles.size());

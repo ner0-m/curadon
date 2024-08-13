@@ -1,6 +1,8 @@
 import numpy as np
+import numpy.typing as npt
 
 from typing import List, Tuple, Optional, Any, Union
+from types import ModuleType
 
 from . import backend as _C
 
@@ -54,10 +56,9 @@ class FanGeometry:
                  det_rotation: Optional[float] = None,
                  vol_spacing: Optional[Tuple[float, float]] = None,
                  vol_offset: Optional[Tuple[float, float]] = None,
-                 COR: Optional[float] = None,
                  device: int = 0,
-                 vol_dtype=np.float32,
-                 sino_dtype=np.float32
+                 vol_prec: int = 32,
+                 sino_prec: int = 32,
                  ):
 
         if is_convertible_to_float(DSD) is False:
@@ -114,15 +115,6 @@ class FanGeometry:
         else:
             self.det_rotation = float(0)
 
-        # Check COR
-        if COR is not None:
-            if is_convertible_to_float(COR) is False:
-                raise TypeError(
-                    f"Expected COR to be float, got {type(COR)}")
-            self.COR = float(COR)
-        else:
-            self.COR = 0
-
         if vol_spacing is not None:
             self.vol_spacing = np.asarray(vol_spacing)
             if self.vol_spacing.shape != (2,):
@@ -139,12 +131,9 @@ class FanGeometry:
         else:
             self.vol_offset = np.zeros(self.vol_shape.shape)
 
-        vol_prec = np.finfo(vol_dtype).bits
-        sino_prec = np.finfo(sino_dtype).bits
-
         self.plan = _C.plan_2d(device, vol_prec, self.vol_shape, self.vol_spacing, self.vol_offset,
                                sino_prec, self.det_shape, self.det_spacing, self.det_offset, self.DSO, self.DSD,
-                               self.angles, self.det_rotation, self.COR)
+                               self.angles, self.det_rotation, 0) # COR currently still ignored
 
     def sinogram_shape(self):
         return (self.nangles, self.det_shape)
