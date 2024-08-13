@@ -13,6 +13,9 @@ def is_convertible_to_float(val: Any):
         return True
     except ValueError:
         return False
+    except TypeError:
+        return False
+    
 
 
 def geom_to_str(geom):
@@ -46,8 +49,8 @@ def geom_to_str(geom):
 
 
 class FanGeometry:
-    def __init__(self, DSD: float,
-                 DSO: float,
+    def __init__(self, DSD: Union[float, List[float]],
+                 DSO: Union[float, List[float]],
                  angles: List[float],
                  vol_shape: Tuple[int, int],
                  det_shape: int,
@@ -60,14 +63,26 @@ class FanGeometry:
                  vol_prec: int = 32,
                  sino_prec: int = 32,
                  ):
+        # Check angles
+        self.angles = np.asarray(angles)
+        if self.angles.ndim != 1:
+            raise AttributeError(
+                f"Angles must be 1D array, got {str(angles.shape)}")
+        self.nangles = self.angles.shape[0]
 
-        if is_convertible_to_float(DSD) is False:
-            raise TypeError(f"Expected DSD to be float, got {type(DSD)}")
-        self.DSD = float(DSD)
+        if is_convertible_to_float(DSD) is True:
+            self.DSD = np.full(self.nangles, DSD)
+        else:
+            self.DSD = np.asarray(DSD)
+            if self.DSD.ndim != 1 or self.DSD.size != self.nangles:
+                raise AttributeError(f"DSD must be a single float, or a list of floats nangles entries (is {self.DSD.size}, expected {self.nangles})")
 
-        if is_convertible_to_float(DSO) is False:
-            raise TypeError(f"Expected DSO to be float, got {type(DSO)}")
-        self.DSO = float(DSO)
+        if is_convertible_to_float(DSO) is True:
+            self.DSO = np.full(self.nangles, DSD)
+        else:
+            self.DSO = np.asarray(DSO)
+            if self.DSO.ndim != 1 or self.DSO.size != self.nangles:
+                raise AttributeError(f"DSO must be a single float, or a list of floats nangles entries (is {self.DSO.size}, expected {self.nangles})")
 
         # Check vol_shape
         self.vol_shape = np.asarray(vol_shape)
@@ -80,13 +95,6 @@ class FanGeometry:
             raise AttributeError(
                 f"det_shape must to be float, got {type(det_shape)}")
         self.det_shape = int(det_shape)
-
-        # Check angles
-        self.angles = np.asarray(angles)
-        if self.angles.ndim != 1:
-            raise AttributeError(
-                f"Angles must be 1D array, got {str(angles.shape)}")
-        self.nangles = self.angles.shape[0]
 
         # Check det_spacing
         if det_spacing is not None:

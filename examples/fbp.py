@@ -66,10 +66,13 @@ def main(n):
     det_shape = cfg["det_shape"]
     det_spacing = cfg["det_spacing"]
     det_offset = cfg["det_offset"]
-    angles = np.linspace(0, cfg["arc"], cfg["nangles"], endpoint=False)
+    nangles = cfg["nangles"]
+    angles = np.linspace(0, cfg["arc"], nangles, endpoint=False)
 
-    DSO = cfg["DSO"]
-    DSD = cfg["DSD"]
+    # It's totally fine to pass an array to describe more complex trajectories with
+    # varying distances for each angle
+    DSO = np.full(nangles, cfg["DSO"])
+    DSD = np.full(nangles, cfg["DSD"])
     geom = curadon.FanGeometry(
         DSD=DSD, DSO=DSO, angles=angles, vol_shape=vol_shape, vol_spacing=vol_spacing, det_shape=det_shape, det_spacing=det_spacing,
         vol_prec=torch.finfo(torch.float32).bits,

@@ -42,6 +42,13 @@ __global__ void kernel_forward_2d(device_span_2d<T> sinogram, vec<u64, 2> vol_sh
     const auto uv_origin = u_origins[glob_proj_idx];
     const auto delta_u = delta_us[glob_proj_idx];
 
+    // TODO: to support curved detector, change this to equal-angled instead
+    // of equal spaced. i.e. given a field of view (e.g. 30), and n detector pixels (e.g. n = 10),
+    // then each detector pixel is alpha (e.g. 30 / 10 = 3) degrees further away.
+    // => calculate detector point with this => some trigonometric ratio
+    // maybe: tan (alpha) = opposite / adjacent => tan(alpha) * adjacent = opposite
+    // (where adjacent is the source to detector distance, and opposite the distance
+    // from detector center to detector pixel)
     const auto det_point = uv_origin + idx_u * delta_u;
 
     // Intersect with volume

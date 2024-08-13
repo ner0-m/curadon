@@ -39,13 +39,44 @@ struct precompute_det_origin_fn {
     vec2f vol_spacing;
 
     template <class Tuple>
-    // __device__ __host__ auto operator()(vec2f &pos, const f32 &angle) const {
     __device__ __host__ auto operator()(Tuple t) const {
         auto &pos = thrust::get<0>(t);
         const auto &angle = thrust::get<1>(t);
         const auto &source = thrust::get<2>(t);
         pos = ::curad::geometry::rotate(pos, angle, source) / vol_spacing;
     }
+};
+
+struct init_det_origin_fn {
+    f32 det_extent;
+    f32 det_spacing;
+
+    template <class Tuple>
+    __device__ __host__ auto operator()(Tuple t) const -> vec2f {
+        auto DSO = thrust::get<0>(t);
+        auto DSD = thrust::get<1>(t);
+        auto DOD = DSD - DSO;
+        return {-det_extent / 2.f + det_spacing * .5f, -DOD};
+    }
+};
+
+struct init_delta_u_fn {
+    f32 det_extent;
+    f32 det_spacing;
+
+    template <class Tuple>
+    __device__ __host__ auto operator()(Tuple t) const -> vec2f {
+        auto DSO = thrust::get<0>(t);
+        auto DSD = thrust::get<1>(t);
+        auto DOD = DSD - DSO;
+        return {-det_extent / 2.f + det_spacing * 1.5f, -DOD};
+    }
+};
+
+struct init_source_fn {
+    f32 det_offset;
+
+    __device__ __host__ auto operator()(f32 DSO) const -> vec2f { return {det_offset, DSO}; }
 };
 } // namespace detail
 
@@ -61,15 +92,18 @@ class plan_2d {
     plan_2d(plan_2d &&) = default;
     plan_2d &operator=(plan_2d &&) = default;
 
-    plan_2d(usize device, precision vol_prec, vec2u vol_shape, vec2f vol_spacing,
-                    vec2f vol_offset, precision det_prec, u64 det_count, f32 det_spacing,
-                    f32 det_offset, f32 DSO, f32 DSD, thrust::device_vector<f32> angles)
+    plan_2d(usize device, precision vol_prec, vec2u vol_shape, vec2f vol_spacing, vec2f vol_offset,
+            precision det_prec, u64 det_count, f32 det_spacing, f32 det_offset,
+            thrust::device_vector<f32> DSO, thrust::device_vector<f32> DSD,
+            thrust::device_vector<f32> angles)
         : plan_2d(device, vol_prec, vol_shape, vol_spacing, vol_offset, det_prec, det_count,
-                          det_spacing, det_offset, DSO, DSD, std::move(angles), 0, 0) {}
+                  det_spacing, det_offset, std::move(DSO), std::move(DSD), std::move(angles), 0,
+                  0) {}
 
-    plan_2d(usize device, precision vol_prec, vec2u vol_shape, vec2f vol_spacing,
-                    vec2f vol_offset, precision det_prec, u64 det_count, f32 spacing, f32 offset,
-                    f32 DSO, f32 DSD, thrust::device_vector<f32> angles, f32 pitch, f32 COR)
+    plan_2d(usize device, precision vol_prec, vec2u vol_shape, vec2f vol_spacing, vec2f vol_offset,
+            precision det_prec, u64 det_count, f32 spacing, f32 offset,
+            thrust::device_vector<f32> DSO, thrust::device_vector<f32> DSD,
+            thrust::device_vector<f32> angles, f32 pitch, f32 COR)
         : device_(device)
         , vol_prec_(vol_prec)
         , det_prec_(det_prec)
@@ -81,8 +115,8 @@ class plan_2d {
         , det_spacing_(spacing)
         , det_extent_(det_count * spacing)
         , det_offset_(offset)
-        , DSD_(DSD)
-        , DSO_(DSO)
+        , DSD_(std::move(DSD))
+        , DSO_(std::move(DSO))
         , angles_(std::move(angles))
         , pitch_(pitch)
         , COR_(COR)
@@ -121,17 +155,17 @@ class plan_2d {
 
     f32 det_offset() const { return det_offset_; }
 
-    f32 DSO() const { return DSO_; }
+    span<f32> DSO() { return {thrust::raw_pointer_cast(DSO_.data()), DSO_.size()}; }
 
-    f32 distance_source_to_object() const { return DSO_; }
+    span<f32> distance_source_to_object() { return DSO(); }
 
-    f32 DSD() const { return DSD_; }
+    span<f32> DSD() { return {thrust::raw_pointer_cast(DSD_.data()), DSD_.size()}; }
 
-    f32 distance_source_to_detector() const { return DSD_; }
+    span<f32> distance_source_to_detector() { return DSD(); }
 
-    f32 DOD() const { return DSD_ - DSO_; }
-
-    f32 distance_object_to_detector() const { return DSD_ - DSO_; }
+    // f32 DOD() const { return DSD_ - DSO_; }
+    //
+    // f32 distance_object_to_detector() const { return DSD_ - DSO_; }
 
     f32 pitch() const { return pitch_; }
 
@@ -157,17 +191,21 @@ class plan_2d {
 
   private:
     void precompute() {
-        vec2f init_det_origin{-det_extent_ / 2.f + det_spacing_ * .5f, -DOD()};
-        vec2f init_detla_u{-det_extent_ / 2.f + det_spacing_ * 1.5f, -DOD()};
-        const vec2f init_source = {det_offset_, DSO_};
-
         u_origins_.resize(angles_.size());
         delta_us_.resize(angles_.size());
         sources_.resize(angles_.size());
 
-        thrust::fill(u_origins_.begin(), u_origins_.end(), init_det_origin);
-        thrust::fill(delta_us_.begin(), delta_us_.end(), init_detla_u);
-        thrust::fill(sources_.begin(), sources_.end(), init_source);
+        {
+            auto first = thrust::make_zip_iterator(thrust::make_tuple(DSO_.begin(), DSD_.begin()));
+            auto last = thrust::make_zip_iterator(thrust::make_tuple(DSO_.end(), DSD_.end()));
+
+            thrust::transform(first, last, u_origins_.begin(),
+                              detail::init_det_origin_fn{det_extent(), det_spacing()});
+            thrust::transform(first, last, delta_us_.begin(),
+                              detail::init_delta_u_fn{det_extent(), det_spacing()});
+            thrust::transform(DSO_.begin(), DSO_.end(), sources_.begin(),
+                              detail::init_source_fn{det_offset()});
+        }
 
         // Rotate source
         {
@@ -233,10 +271,11 @@ class plan_2d {
     f32 det_offset_;
 
     /// Distance source to detector
-    f32 DSD_;
+    thrust::device_vector<f32> DSD_;
 
     /// Distance source to object / center of rotation
-    f32 DSO_;
+    // f32 DSO_;
+    thrust::device_vector<f32> DSO_;
 
     // euler angles in radian,
     // TODO: change to device_uvector? to avoid call to thrust::uninitialized_fill

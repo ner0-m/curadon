@@ -21,8 +21,9 @@ namespace kernel {
 template <typename T>
 __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_spacing,
                             vec2f vol_offset, cudaTextureObject_t texture, u64 det_shape,
-                            f32 det_spacing, f32 DSD, f32 DSO, f32 *__restrict__ angles,
-                            u64 cur_projection, u64 nangles, u64 num_projections) {
+                            f32 det_spacing, f32 *__restrict__ DSD, f32 *__restrict__ DSO,
+                            f32 *__restrict__ angles, u64 cur_projection, u64 nangles,
+                            u64 num_projections) {
     // Calculate image coordinates
     const u64 idx_x = blockIdx.x * blockDim.x + threadIdx.x;
     const u64 idx_y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -37,16 +38,18 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
         return;
     }
 
-    // keep sin and cos packed together to save one memory load in the main loop
-    extern __shared__ float2 sincos[];
+    // keep sin, cos, dsd, dso packed together to save one memory load in the main loop
+    extern __shared__ float4 meta[];
 
     const u64 tid = threadIdx.y * blockDim.x + threadIdx.x;
     for (int i = tid; i < nangles; i += blockDim.x * blockDim.y) {
         if (i < num_projections) {
-            float2 tmp;
+            float4 tmp;
             tmp.x = -__sinf(angles[cur_projection + i]);
             tmp.y = __cosf(angles[cur_projection + i]);
-            sincos[i] = tmp;
+            tmp.z = (DSD[cur_projection + i]);
+            tmp.w = (DSO[cur_projection + i]);
+            meta[i] = tmp;
         }
     }
     __syncthreads();
@@ -66,8 +69,10 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
             break;
         }
 
-        const auto sin = sincos[proj_idx].x;
-        const auto cos = sincos[proj_idx].y;
+        const auto sin = meta[proj_idx].x;
+        const auto cos = meta[proj_idx].y;
+        const auto dsd = meta[proj_idx].z;
+        const auto dso = meta[proj_idx].w;
 
         // Naming conventions follows
         // "A geometric calibration method for cone beam CT systems" by Kai Yang (2006)
@@ -81,13 +86,13 @@ __global__ void backward_2d(T *__restrict__ volume, vec2u vol_shape, vec2f vol_s
         const f32 yi = cos * sx + sin * sy;
 
         // Compute term 1
-        const f32 weight = __fdividef(DSD, xi + DSO);
+        const f32 weight = __fdividef(dsd, xi + dso);
 
         // Putting it all together
         const f32 u = weight * yi + det_extend_u;
 
         // TODO: This is not yet proper FDK weighting. This is what TrochRadon is doing
-        // and ASTRA for non FBP back projections! 
+        // and ASTRA for non FBP back projections!
         accum += tex1DLayered<float>(texture, u, proj_idx) * weight;
     }
 
@@ -133,12 +138,12 @@ void backproject_2d_async(device_span_2d<T> volume, device_span_2d<U> sino, plan
         int block_y = utils::round_up_division(vol_shape[1], divy);
         dim3 num_blocks(block_x, block_y);
 
-        const u32 shared_mem_bytes = sizeof(f32) * plan.num_projections_per_kernel();
+        const u32 shared_mem_bytes = (4 * sizeof(f32)) * plan.num_projections_per_kernel();
 
         kernel::backward_2d<<<num_blocks, threads_per_block, shared_mem_bytes, loop_stream>>>(
             volume.device_data(), plan.vol_shape(), plan.vol_spacing(), plan.vol_offset(),
-            tex.tex(), det_count, plan.det_spacing(), plan.DSD(), plan.DSO(), plan.angles().data(),
-            proj_idx, nangles, plan.num_projections_per_kernel());
+            tex.tex(), det_count, plan.det_spacing(), plan.DSD().data(), plan.DSO().data(),
+            plan.angles().data(), proj_idx, nangles, plan.num_projections_per_kernel());
 
         gpuErrchk(cudaGetLastError());
 
@@ -148,8 +153,8 @@ void backproject_2d_async(device_span_2d<T> volume, device_span_2d<U> sino, plan
 }
 
 template <class T, class U>
-void backproject_2d_sync(device_span_2d<T> volume, device_span_2d<U> sinogram,
-                         plan_2d &plan, cuda::stream_view stream) {
+void backproject_2d_sync(device_span_2d<T> volume, device_span_2d<U> sinogram, plan_2d &plan,
+                         cuda::stream_view stream) {
     backproject_2d_async(volume, sinogram, plan, stream);
     stream.synchronize();
 }
