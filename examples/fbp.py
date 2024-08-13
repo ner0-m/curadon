@@ -72,8 +72,8 @@ def main(n):
     DSD = cfg["DSD"]
     geom = curadon.FanGeometry(
         DSD=DSD, DSO=DSO, angles=angles, vol_shape=vol_shape, vol_spacing=vol_spacing, det_shape=det_shape, det_spacing=det_spacing,
-        vol_dtype=torch.float32,
-        sino_dtype=torch.float32,
+        vol_prec=torch.finfo(torch.float32).bits,
+        sino_prec=torch.finfo(torch.float32).bits,
     )
 
     phantom = np.flip(shepp_logan(vol_shape)).copy()
@@ -81,14 +81,14 @@ def main(n):
 
     sino = torch.zeros(len(angles), det_shape).type(torch.float32).cuda()
 
-    curadon.forward(volume, geom, sino)
+    curadon.forward(volume, sino, geom)
 
     filt = _get_filter(det_shape, "ram-lak")
     fsino = _apply_filter(sino.type(torch.float32), filt).type(
         torch.float32) * (np.pi / (2 * len(angles)))
 
     fbp = torch.zeros_like(volume)
-    curadon.backward(fsino, geom, fbp)
+    curadon.backward(fsino, fbp, geom)
 
     # fbp = fbp.cpu().detach().numpy()
     plt.imshow(fbp.cpu().detach().numpy(), cmap="gray")
