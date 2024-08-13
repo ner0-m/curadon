@@ -163,10 +163,6 @@ class plan_2d {
 
     span<f32> distance_source_to_detector() { return DSD(); }
 
-    // f32 DOD() const { return DSD_ - DSO_; }
-    //
-    // f32 distance_object_to_detector() const { return DSD_ - DSO_; }
-
     f32 pitch() const { return pitch_; }
 
     f32 COR() const { return COR_; }
