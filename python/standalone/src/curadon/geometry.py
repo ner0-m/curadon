@@ -15,7 +15,7 @@ def is_convertible_to_float(val: Any):
         return False
     except TypeError:
         return False
-    
+
 
 
 def geom_to_str(geom):
@@ -24,6 +24,8 @@ def geom_to_str(geom):
     parameters.append("Geometry parameters")
     parameters.append(f"Distance from source to detector (DSD) = {geom.DSD}")
     parameters.append(f"Distance from source to origin (DSO) = {geom.DSO}")
+    if isinstance(geom, FanGeometry):
+        parameters.append(f"Projections angles = {np.rad2deg(geom.angles)}")
     parameters.append("-----")
     parameters.append("Detector parameters")
     parameters.append(f"Number of pixels (det_shape) = {geom.det_shape}")
@@ -43,12 +45,94 @@ def geom_to_str(geom):
     parameters.append(
         f"Offset of image from origin (vol_offset) = {geom.vol_offset}")
 
-    parameters.append("-----")
-    parameters.append(f"Centre of rotation correction (COR) = {geom.COR}")
+    # parameters.append("-----")
+    # parameters.append(f"Centre of rotation correction (COR) = {geom.COR}")
     return "\n".join(parameters)
 
 
 class FanGeometry:
+    def to_vec(self):
+        """
+        Create an ASTRA-like vector description of a given FanGeometry
+        """
+        vecs = []
+        # This is now implemented both here and in C++, I think that should be
+        # moved to one source of truth, as mismatches would be terrible to
+        # debug...
+        for (alpha, dsd, dso) in zip(self.angles, self.DSD, self.DSO):
+            src = np.array([0, dso])
+            dod = dsd - dso
+            det = np.array([0, -dod])
+            u = np.array([1, 0])
+
+            cs = np.cos(alpha)
+            sn = np.sin(alpha)
+
+            R = np.asarray([[cs, sn], [-sn, cs]])
+
+            src = np.dot(R, src)
+            det = np.dot(R, det)
+            u = np.dot(R, u)
+
+            vecs.append([*src.tolist(), *det.tolist(), *u.tolist()])
+
+        return vecs
+
+
+
+
+    @staticmethod
+    def from_vec(vol_shape: Tuple[int, int], det_shape: int, vecs: List[List[float]], **kwargs):
+        """
+        Create FanGeometry from an ASTRA-like vector description.
+
+        Parameters
+        ----------
+            det_shape : int
+                Number of pixels of the flat-panel detector
+            vecs : List[List[float]]
+                A list of vectors of length 6 describing the geometry. The 6
+                entries describe `[source_pos.x, source_pos.y, det_pos.x,
+                det_pos.y, u.x, u.y], where `source_pos` is the position of the
+                source, `det_pos` is the center of the detector, and `u` is the
+                direction vector from center of detector pixel 0 to detector
+                pixel 1
+            **kwargs :
+                Arguments passed on to the constructor of FanGeometry
+
+        """
+        vecs = np.asarray(vecs)
+
+        dsd = []
+        dso = []
+        angles = []
+        det_spacing = np.linalg.norm(np.asarray(vecs[0][-2:]))
+        for v in vecs:
+            sx, sy, dx, dy, ux, uy = v
+
+            src = np.asarray([sx, sy])
+            det = np.asarray([dx, dy])
+            u = np.asarray([ux, uy])
+
+            src2det = src - det
+            dsd.append(np.linalg.norm(src2det))
+            dso.append(np.linalg.norm(src))
+
+            # atan2 gives the angle of the line between source and detector
+            # ensure no rotation is given if src is at [0, dso], and detector
+            # at [0, dso - dsd], and rotation is clockwise
+            angles.append(np.atan2(*src2det) % (2*np.pi))
+
+            # TODO: check how astra handles this? I don't think it supports changing detector spacing
+            # TODO: this is also more than the spacing, it also indicates start of detector,
+            #       which is currently hard-coded in curadon
+            if not np.isclose(det_spacing, np.linalg.norm(u)):
+                raise AttributeError("Detector must have equal spacing for all projections")
+
+        return FanGeometry(DSD=dsd, DSO=dso, angles=angles, vol_shape=vol_shape,
+                           det_shape=det_shape, det_spacing=det_spacing, **kwargs)
+
+
     def __init__(self, DSD: Union[float, List[float]],
                  DSO: Union[float, List[float]],
                  angles: List[float],
