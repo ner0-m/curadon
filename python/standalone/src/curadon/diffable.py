@@ -1,4 +1,11 @@
-from torch.autograd import Function
+import sys
+try:
+    from torch.autograd import Function
+except ImportError:
+    print("Could not import torch.autograd")
+    print("The automatic differentiation functionality is only availabe if PyTorch can be found")
+    sys.exit(1)
+
 
 from .forward import forward
 from .backward import backward

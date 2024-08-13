@@ -71,7 +71,7 @@ nanobind_add_module(
   src/plan.cu)
 
 target_include_directories(
-  curadon_ext PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
+  curadon_ext PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include>
                      $<INSTALL_INTERFACE:include>)
 
 target_compile_options(

@@ -1,4 +1,3 @@
-import torch
 import numpy as np
 
 from typing import List, Tuple, Optional, Any, Union
@@ -56,9 +55,9 @@ class FanGeometry:
                  vol_spacing: Optional[Tuple[float, float]] = None,
                  vol_offset: Optional[Tuple[float, float]] = None,
                  COR: Optional[float] = None,
-                 device: int = torch.cuda.current_device(),
-                 vol_dtype=torch.float32,
-                 sino_dtype=torch.float32
+                 device: int = 0,
+                 vol_dtype=np.float32,
+                 sino_dtype=np.float32
                  ):
 
         if is_convertible_to_float(DSD) is False:
@@ -82,7 +81,7 @@ class FanGeometry:
         self.det_shape = int(det_shape)
 
         # Check angles
-        self.angles = torch.from_numpy(angles).cuda()
+        self.angles = np.asarray(angles)
         if self.angles.ndim != 1:
             raise AttributeError(
                 f"Angles must be 1D array, got {str(angles.shape)}")
@@ -140,8 +139,8 @@ class FanGeometry:
         else:
             self.vol_offset = np.zeros(self.vol_shape.shape)
 
-        vol_prec = torch.finfo(vol_dtype).bits
-        sino_prec = torch.finfo(sino_dtype).bits
+        vol_prec = np.finfo(vol_dtype).bits
+        sino_prec = np.finfo(sino_dtype).bits
 
         self.plan = _C.plan_2d(device, vol_prec, self.vol_shape, self.vol_spacing, self.vol_offset,
                                sino_prec, self.det_shape, self.det_spacing, self.det_offset, self.DSO, self.DSD,
