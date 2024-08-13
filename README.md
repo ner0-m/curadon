@@ -42,6 +42,26 @@ The size of the image is given in the description, the detector is of size
 $\sqrt{2}n$, where $n$ is the size of the image. You can find the code to run the
 benchmarks in the `benchmark` folder.
 
+## Roadmap
+
+I got much valuable feedback at the CT Meeting 2024 conference. Where I was
+fortunate enough to showcase my work. With this feedback in mind, as of August 2024,
+my next steps will focus on building further improving the 2D projection. The features
+I'll work on next (in no particular order):
+
+- [x] Loose restrictions on trajectory
+- [x] Construct geometry from ASTRA-like vector notation
+- [ ] Support batch operations
+- [ ] Support curved detector
+- [ ] Matched operators and builtin cosine weights (similar to FDK weights)
+
+Then I will play catch up with the 3D projectors, and make them more similar to
+the 2D projectors, including support for projection matrices.
+
+In the mean time, I will work on examples that showcase the different features
+of curadon. If you have any thoughts or feature requests, please open an issue.
+I'm happy to discuss it!
+
 ## How to use the library
 
 Check the example folder to see how the library works. There you will find
